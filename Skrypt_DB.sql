@@ -95,7 +95,7 @@ CREATE TABLE Warsztaty (
 CREATE TABLE Klienci (
   ID_Klienta  int         not null primary key identity (1, 1),
   Nazwa       varchar(30) null,
-  NIP         char(9)     null,
+  NIP         char(9)     null unique,
   Imie        varchar(30) not null,
   Nazwisko    varchar(30) not null,
   Miasto      varchar(30) not null,
@@ -124,14 +124,16 @@ CREATE TABLE RezerwacjeWarsztatow (
   LiczbaMiejsc   int  not null,
   ID_Warsztatu   int  not null foreign key references Warsztaty (ID_Warsztatu),
   DataRezerwacji date not null,
-  Constraint PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0)
+  Constraint Rezerwacje_PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0)
 )
 
 CREATE TABLE UczestnicyKonferencji (
   ID_Uczestnika int         not null primary key identity (1, 1),
   Imie          varchar(16) not null,
   Nazwisko      varchar(16) not null,
-  Rezerwacja    int         not null foreign key references RezerwacjeDni (ID_Rezerwacji)
+  PESEL         varchar(11) not null,
+  Rezerwacja    int         not null foreign key references RezerwacjeDni (ID_Rezerwacji),
+  CONSTRAINT PeselCheck UNIQUE NONCLUSTERED (PESEL, Rezerwacja)
 )
 
 CREATE TABLE UczestnicyWarsztatow (
@@ -152,6 +154,8 @@ CREATE TABLE Platnosci (
   Kwota               decimal(8, 2) not null,
   Constraint PoprawnaKwota CHECK (Kwota > 0)
 )
+
+GO
 
 ----------------- Funkcje
 
@@ -222,26 +226,26 @@ AS
                           FROM RezerwacjeDni AS R
                                  JOIN DniKonferencji AS DK on R.ID_Dnia = DK.ID_Dnia
                                  JOIN Konferencje AS K ON DK.ID_Konferencji = K.ID_Konferencji
-                                 JOIN CennikKonferencji C on K.ID_Cernnika = C.ID_Cennika)
+                                 JOIN CennikKonferencji C on K.ID_Cennika = C.ID_Cennika)
     ELSE IF @TygodnieDoKonferencji <= 2
       SET @CenaZaOsobe = (SELECT (Cena * ProgII)
                           FROM RezerwacjeDni AS R
                                  JOIN DniKonferencji AS DK on R.ID_Dnia = DK.ID_Dnia
                                  JOIN Konferencje AS K ON DK.ID_Konferencji = K.ID_Konferencji
-                                 JOIN CennikKonferencji C on K.ID_Cernnika = C.ID_Cennika)
+                                 JOIN CennikKonferencji C on K.ID_Cennika = C.ID_Cennika)
     ELSE
       SET @CenaZaOsobe = (SELECT (Cena)
                           FROM RezerwacjeDni AS R
                                  JOIN DniKonferencji AS DK on R.ID_Dnia = DK.ID_Dnia
                                  JOIN Konferencje AS K ON DK.ID_Konferencji = K.ID_Konferencji
-                                 JOIN CennikKonferencji C on K.ID_Cernnika = C.ID_Cennika)
+                                 JOIN CennikKonferencji C on K.ID_Cennika = C.ID_Cennika)
 
     DECLARE @ZnizkaStudencka AS float;
     SET @ZnizkaStudencka = (SELECT ZnizkaStudencka
                             FROM RezerwacjeDni AS R
                                    JOIN DniKonferencji AS DK on R.ID_Dnia = DK.ID_Dnia
                                    JOIN Konferencje AS K ON DK.ID_Konferencji = K.ID_Konferencji
-                                   JOIN CennikKonferencji C on K.ID_Cernnika = C.ID_Cennika)
+                                   JOIN CennikKonferencji C on K.ID_Cennika = C.ID_Cennika)
 
     DECLARE @LiczbaOsob AS int;
     SET @LiczbaOsob = (SELECT LiczbaMiejsc FROM RezerwacjeDni WHERE ID_Rezerwacji = @ID_Rezerwacji)
@@ -256,6 +260,38 @@ AS
   END
 GO
 
+
+CREATE FUNCTION KolizjaTrwaniaWarsztatu(@ID_Uczestnika int, @RezerwacjaWarsztatu int)
+  RETURNS bit
+AS
+  BEGIN
+
+    DECLARE @Rozpoczecie AS time;
+    DECLARE @Zakonczenie AS time;
+
+    SET @Rozpoczecie = (SELECT Rozpoczecie
+                        FROM Warsztaty AS W
+                               JOIN RezerwacjeWarsztatow R
+                                 on W.ID_Warsztatu = R.ID_Warsztatu AND R.ID_Rezerwacji = @RezerwacjaWarsztatu);
+    SET @Zakonczenie = (SELECT Zakonczenie
+                        FROM Warsztaty AS W
+                               JOIN RezerwacjeWarsztatow R
+                                 on W.ID_Warsztatu = R.ID_Warsztatu AND R.ID_Rezerwacji = @RezerwacjaWarsztatu);
+    IF EXISTS(SELECT *
+              FROM Warsztaty AS W
+                     JOIN DniKonferencji DK on W.ID_Dnia = DK.ID_Dnia
+                     JOIN RezerwacjeDni RD on DK.ID_Dnia = RD.ID_Dnia
+                     JOIN UczestnicyKonferencji K on RD.ID_Rezerwacji = K.Rezerwacja AND ID_Uczestnika = @ID_Uczestnika
+              WHERE (@Zakonczenie > Rozpoczecie AND @Rozpoczecie < Rozpoczecie)
+                 OR (@Zakonczenie < Zakonczenie AND @Rozpoczecie > Rozpoczecie)
+                 OR (@Rozpoczecie < Zakonczenie AND @Zakonczenie > Zakonczenie))
+      RETURN 1
+
+
+    RETURN 0
+  END
+
+GO
 -------------------------- Procedury
 
 
@@ -279,22 +315,33 @@ CREATE PROCEDURE DodajUczestnikaKonferencji
   (@ID_Rezerwacji    int,
    @Imie             varchar(16),
    @Nazwisko         varchar(16),
+   @PESEL            varchar(8),
    @NumerLegitymacji int)
 AS
   BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
     BEGIN TRANSACTION
-    INSERT INTO UczestnicyKonferencji VALUES (@Imie, @Nazwisko, @ID_Rezerwacji);
+    IF EXISTS(SELECT * FROM UczestnicyKonferencji WHERE PESEL = @PESEL
+                                                    AND Rezerwacja = @ID_Rezerwacji)
+      RAISERROR ('Podany PESEL jest ju? zarejstrowany w obr?bie podanej rezerwacji', 10, 1)
+
+    INSERT INTO UczestnicyKonferencji VALUES (@Imie, @Nazwisko, @PESEL, @ID_Rezerwacji);
 
     IF @NumerLegitymacji IS NOT NULL
       BEGIN
+        IF EXISTS(SELECT *
+                  FROM Studenci AS S
+                         JOIN UczestnicyKonferencji AS K on S.ID_Uczestnika = K.ID_Uczestnika AND K.PESEL != @PESEL)
+          RAISERROR ('Podany numer legitymacji nale?y do innego uczestnika', 10, 1)
+
         DECLARE @ID_Uczestnika AS int;
         SET @ID_Uczestnika = (SELECT ID_Uczestnika
                               FROM UczestnicyKonferencji AS UK
                               WHERE UK.Imie = @Imie
                                 AND UK.Nazwisko = @Nazwisko
-                                AND UK.Rezerwacja = @ID_Rezerwacji);
+                                AND UK.Rezerwacja = @ID_Rezerwacji
+                                AND PESEL = @PESEL);
 
         INSERT INTO Studenci VALUES (@ID_Uczestnika, @NumerLegitymacji)
       END
@@ -313,10 +360,17 @@ CREATE PROCEDURE DodajUczestnikaWarsztatu
    @ID_UczestnikaKonferencji int)
 AS
   BEGIN
+    BEGIN TRY
     SET NOCOUNT ON;
+    BEGIN TRANSACTION
 
     INSERT INTO UczestnicyWarsztatow VALUES (@ID_UczestnikaKonferencji, @ID_Rezerwacji)
 
+    COMMIT TRANSACTION
+    END TRY
+    BEGIN CATCH
+    ROLLBACK TRANSACTION
+    END CATCH
   END
 GO
 
@@ -353,11 +407,10 @@ CREATE PROCEDURE DodajCennik
   (@Cena            money,
    @ZnizkaStudencka float,
    @ProgI           float,
-   @ProgII          float,
-   @ProgIII         float)
+   @ProgII          float)
 AS
   BEGIN
-    INSERT INTO CennikKonferencji VALUES (@Cena, @ZnizkaStudencka, @ProgI, @ProgII, @ProgIII)
+    INSERT INTO CennikKonferencji VALUES (@Cena, @ZnizkaStudencka, @ProgI, @ProgII)
   END
 GO
 
@@ -389,7 +442,9 @@ AS
        OR @NrBudynku IS NULL
       THROW 51000, 'Adres jest niepelny', 1
     IF @NIP IS NOT NULL AND @NIP NOT LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
-      THROW 51000, 'NIP jest niepoprawny', 1
+      RAISERROR ('Niepoprawny NIP', 10, 1)
+    IF EXISTS(SELECT * FROM Klienci WHERE NIP = @NIP)
+      RAISERROR ('Podany NIP wystepuje w bazie.', 10, 1)
     INSERT into Klienci (Nazwa, NIP, Imie, Nazwisko, Miasto, Ulica, KodPocztowy, NrBudynku, NrLokalu, Telefon, EMail)
     VALUES (@Nazwa, @NIP, @Imie, @Nazwisko, @Miasto, @Ulica, @KodPocztowy, @NrBudynku, @NrLokalu, @Telefon, @Email)
     COMMIT TRANSACTION

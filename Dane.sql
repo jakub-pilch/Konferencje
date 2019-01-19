@@ -1,7 +1,6 @@
 USE Konferencje
 
-INSERT INTO dbo.Klienci
-VALUES ('Bambaryło', 123123212, 'Andrzej', 'Bambaryło', 'Kraków', 'Dietla', '99-999', 1, 1,1);
+EXEC dbo.DodajKlienta 'Bambaryło', 111111111, 'Jacek', 'Bambaryło', 'Kraków' , 'Dietla' , '44-444' , 2 , 2 , 111111111, 'jacek.bambaryło@op.pl';
 
 SELECT *
 FROM dbo.Klienci
