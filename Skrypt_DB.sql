@@ -46,6 +46,7 @@ IF OBJECT_ID('Platnosci', 'U') IS NOT NULL
 CREATE TABLE CennikKonferencji (
   ID_Cennika int           not null primary key identity (1, 1),
   Cena       decimal(5, 2) not null,
+  ZnizkaStudencka	float  not null,
   ProgI      decimal(4, 2) not null,
   ProgII     decimal(4, 2) not null,
   ProgIII    decimal(4, 2) not null
