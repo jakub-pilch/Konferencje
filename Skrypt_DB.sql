@@ -89,6 +89,7 @@ CREATE TABLE Warsztaty (
   LiczbaMiejsc    int           not null,
   Cena            decimal(4, 2) null,
   ZnizkaStudencka decimal(4, 2) null,
+  Temat           varchar(MAX)  not null,
   Constraint PoprawneNastepstwoCzasu CHECK (Rozpoczecie < Zakonczenie),
   Constraint Warsztaty_PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0)
 )
@@ -171,6 +172,19 @@ IF OBJECT_ID('CenaRezerwacjiDniaKonferencji', N'FN') IS NOT NULL
   DROP FUNCTION CenaRezerwacjiDniaKonferencji
 GO
 
+IF OBJECT_ID('KolizjaTrwaniaWarsztatu', N'FN') IS NOT NULL
+  DROP FUNCTION KolizjaTrwaniaWarsztatu
+GO
+
+IF OBJECT_ID('CenaRezerwacjiWarsztatu', N'FN') IS NOT NULL
+  DROP FUNCTION CenaRezerwacjiWarsztatu
+GO
+
+
+IF OBJECT_ID('WarsztatNalezyDoKonferencjiUczestnika', N'FN') IS NOT NULL
+  DROP FUNCTION WarsztatNalezyDoKonferencjiUczestnika
+GO
+
 CREATE FUNCTION WolneMiejscaWarsztat(@ID_Warsztatu int)
   RETURNS INT
 AS
@@ -210,7 +224,7 @@ AS
 GO
 
 CREATE FUNCTION CenaRezerwacjiDniaKonferencji(@ID_Rezerwacji int)
-  RETURNS int
+  RETURNS money
 AS
   BEGIN
     DECLARE @TygodnieDoKonferencji AS int;
@@ -260,6 +274,39 @@ AS
   END
 GO
 
+CREATE FUNCTION CenaRezerwacjiWarsztatu(@ID_Rezerwacji int)
+  RETURNS money
+AS
+  BEGIN
+    DECLARE @LiczbaOsob AS int;
+    SET @LiczbaOsob = (SELECT LiczbaMiejsc FROM RezerwacjeWarsztatow WHERE ID_Rezerwacji = @ID_Rezerwacji)
+
+    DECLARE @LiczbaStudentow AS int;
+    SET @LiczbaStudentow = (SELECT COUNT(*)
+                            FROM UczestnicyWarsztatow W
+                                   JOIN UczestnicyKonferencji K on W.ID_Uczestnika = K.ID_Uczestnika
+                                   JOIN Studenci S on K.ID_Uczestnika = S.ID_Uczestnika
+                            WHERE W.ID_Rezerwacji = @ID_Rezerwacji)
+
+    DECLARE @CenaWarsztatu AS money;
+    SET @CenaWarsztatu = (SELECT Cena
+                          FROM Warsztaty W
+                                 JOIN RezerwacjeWarsztatow R
+                                   on W.ID_Warsztatu = R.ID_Warsztatu AND R.ID_Rezerwacji = @ID_Rezerwacji)
+
+    DECLARE @ZnizkaStudencka AS float;
+    SET @ZnizkaStudencka = (SELECT ZnizkaStudencka
+                            FROM Warsztaty W
+                                   JOIN RezerwacjeWarsztatow R
+                                     on W.ID_Warsztatu = R.ID_Warsztatu AND R.ID_Rezerwacji = @ID_Rezerwacji)
+
+    RETURN (@LiczbaStudentow * @CenaWarsztatu * @ZnizkaStudencka) + ((@LiczbaOsob - @LiczbaStudentow) * @CenaWarsztatu)
+
+
+  END
+
+GO
+
 
 CREATE FUNCTION KolizjaTrwaniaWarsztatu(@ID_Uczestnika int, @RezerwacjaWarsztatu int)
   RETURNS bit
@@ -292,6 +339,43 @@ AS
   END
 
 GO
+
+CREATE FUNCTION WarsztatNalezyDoKonferencjiUczestnika(@ID_Uczestnika int, @RezerwacjaWarsztatu int)
+  RETURNS bit
+AS
+  BEGIN
+
+    DECLARE @KonferencjaWarsztatu AS int;
+    DECLARE @KonferencjaUczestnika AS int;
+
+    SET @KonferencjaUczestnika = (SELECT RD.ID_Dnia
+                                  FROM RezerwacjeDni RD
+                                         JOIN UczestnicyKonferencji K
+                                           on RD.ID_Rezerwacji = K.Rezerwacja AND K.ID_Uczestnika = @ID_Uczestnika)
+
+    SET @KonferencjaWarsztatu = (SELECT W.ID_Dnia
+                                 FROM Warsztaty W
+                                        JOIN RezerwacjeWarsztatow R
+                                          on W.ID_Warsztatu = R.ID_Warsztatu AND ID_Rezerwacji = @RezerwacjaWarsztatu)
+
+    IF @KonferencjaUczestnika IS NOT NULL AND @KonferencjaWarsztatu IS NOT NULL AND
+       @KonferencjaWarsztatu = @KonferencjaUczestnika
+      RETURN 1
+
+    RETURN 0
+  END
+
+GO
+
+------------------------------------ Dodatkowe constrainty
+
+ALTER TABLE UczestnicyWarsztatow
+  ADD CONSTRAINT Rezerwacje_CKKolizjaWarsztatow CHECK (dbo.KolizjaTrwaniaWarsztatu(ID_Uczestnika, ID_Rezerwacji) = 0);
+
+ALTER TABLE UczestnicyWarsztatow
+  ADD CONSTRAINT Rezerwacje_CKKonferencjaWarsztatu CHECK (dbo.WarsztatNalezyDoKonferencjiUczestnika(ID_Uczestnika,
+                                                                                                    ID_Rezerwacji) = 1)
+
 -------------------------- Procedury
 
 
@@ -364,6 +448,11 @@ AS
     SET NOCOUNT ON;
     BEGIN TRANSACTION
 
+    IF (dbo.KolizjaTrwaniaWarsztatu(@ID_UczestnikaKonferencji, @ID_Rezerwacji) = 1)
+      RAISERROR ('Podany uczestnikw tym czasie bierze udzia? w innym warsztacie', 10, 1)
+
+    IF (dbo.WarsztatNalezyDoKonferencjiUczestnika(@ID_UczestnikaKonferencji, @ID_Rezerwacji) = 0)
+      RAISERROR ('Uczestnik nie bierze udzia?u w konferencji na której odbywa si? warsztat', 10, 1)
     INSERT INTO UczestnicyWarsztatow VALUES (@ID_UczestnikaKonferencji, @ID_Rezerwacji)
 
     COMMIT TRANSACTION
@@ -821,3 +910,4 @@ AS
   END
 GO
 
+---------------------------- Triggery
