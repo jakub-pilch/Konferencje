@@ -49,7 +49,8 @@ CREATE TABLE CennikKonferencji (
   ZnizkaStudencka	float  not null,
   ProgI      decimal(4, 2) not null,
   ProgII     decimal(4, 2) not null,
-  ProgIII    decimal(4, 2) not null
+  ProgIII    decimal(4, 2) not null,
+  Constraint PoprawnaCena CHECK (Cena > 0)
 )
 
 CREATE TABLE Lokalizacje (
@@ -88,7 +89,8 @@ CREATE TABLE Warsztaty (
   Cena            decimal(4, 2) null,
   ZnizkaStudencka decimal(4, 2) null,
   Constraint PoprawneNastepstwoCzasu CHECK (Rozpoczecie < Zakonczenie),
-  Constraint PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0)
+  Constraint PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0),
+  Constraint PoprawnaCena CHECK (Cena > 0)
 )
 CREATE TABLE Klienci (
   ID_Klienta   int         not null primary key identity (1, 1),
