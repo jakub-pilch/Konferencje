@@ -50,7 +50,7 @@ CREATE TABLE CennikKonferencji (
   ProgI      decimal(4, 2) not null,
   ProgII     decimal(4, 2) not null,
   ProgIII    decimal(4, 2) not null,
-  Constraint PoprawnaCena CHECK (Cena > 0)
+  Constraint PoprawnaCenaCennik CHECK (Cena > 0)
 )
 
 CREATE TABLE Lokalizacje (
@@ -59,7 +59,7 @@ CREATE TABLE Lokalizacje (
   Ulica          varchar(30) not null,
   KodPocztowy    varchar(8)  not null,
   NumerBudynku   smallint    not null,
-  Constraint PoprawnyKodPocztowy Check (KodPocztowy like '[0-9][0-9]-[0-9][0-9][0-9]')
+  Constraint PoprawnyKodPocztowyLokalizacje Check (KodPocztowy like '[0-9][0-9]-[0-9][0-9][0-9]')
 )
 
 CREATE TABLE Konferencje (
@@ -69,7 +69,7 @@ CREATE TABLE Konferencje (
   DzienZakonczenia date        not null,
   ID_Cennika       int         not null foreign key references CennikKonferencji (ID_Cennika),
   Lokalizacja      int         not null foreign key references Lokalizacje (ID_Lokalizacji),
-  Constraint PoprawneDaty CHECK (DzienZakonczenia >= DzienRozpoczecia)
+  Constraint PoprawneDatyKonferencje CHECK (DzienZakonczenia >= DzienRozpoczecia)
 )
 
 CREATE TABLE DniKonferencji (
@@ -77,20 +77,21 @@ CREATE TABLE DniKonferencji (
   ID_Konferencji int  not null foreign key references Konferencje (ID_Konferencji),
   Data           date not null,
   LiczbaMiejsc   int  not null,
-  Constraint PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0)
+  Constraint PoprawnaLiczbaMiejscDniKonferencji CHECK (LiczbaMiejsc > 0)
 )
 
 CREATE TABLE Warsztaty (
   ID_Warsztatu    int           not null primary key identity (1, 1),
   ID_Dnia         int           not null foreign key references DniKonferencji (ID_Dnia),
+  NazwaWarsztatu  varchar(30)	not null,
   Rozpoczecie     time          not null,
   Zakonczenie     time          not null,
   LiczbaMiejsc    int           not null,
   Cena            decimal(4, 2) null,
   ZnizkaStudencka decimal(4, 2) null,
-  Constraint PoprawneNastepstwoCzasu CHECK (Rozpoczecie < Zakonczenie),
-  Constraint PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0),
-  Constraint PoprawnaCena CHECK (Cena > 0)
+  Constraint PoprawneNastepstwoCzasuWarsztaty CHECK (Rozpoczecie < Zakonczenie),
+  Constraint PoprawnaLiczbaMiejscWarsztaty CHECK (LiczbaMiejsc > 0),
+  Constraint PoprawnaCenaWarsztaty CHECK (Cena > 0)
 )
 CREATE TABLE Klienci (
   ID_Klienta   int         not null primary key identity (1, 1),
@@ -105,8 +106,8 @@ CREATE TABLE Klienci (
   NrLokalu     smallint    null,
   Telefon      varchar(20) null,
   EMail        varchar(30) null,
-  Constraint PoprawnyNip Check (NIP LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'), 
-  Constraint PoprawnyKodPocztowy Check (KodPocztowy like '[0-9][0-9]-[0-9][0-9][0-9]')
+  Constraint PoprawnyNipKlienci Check (NIP LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'), 
+  Constraint PoprawnyKodPocztowyKlienci Check (KodPocztowy like '[0-9][0-9]-[0-9][0-9][0-9]')
 )
 
 CREATE TABLE RezerwacjeDni (
@@ -115,7 +116,7 @@ CREATE TABLE RezerwacjeDni (
   ID_Dnia        int      not null foreign key references DniKonferencji (ID_Dnia),
   LiczbaMiejsc   smallint not null,
   DataRezerwacji date     not null,
-  Constraint PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0)
+  Constraint PoprawnaLiczbaMiejscRezerwacjeD CHECK (LiczbaMiejsc > 0)
 )
 
 CREATE TABLE RezerwacjeWarsztatow (
@@ -123,8 +124,8 @@ CREATE TABLE RezerwacjeWarsztatow (
   RezerwacjaDnia int  not null foreign key references RezerwacjeDni (ID_Rezerwacji),
   LiczbaMiejsc   int  not null,
   ID_Warsztatu   int  not null foreign key references Warsztaty (ID_Warsztatu),
-  DataRezerwacji date not null
-  Constraint PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0)
+  DataRezerwacji date not null,
+  Constraint PoprawnaLiczbaMiejscRezerwacjeW CHECK (LiczbaMiejsc > 0)
 )
 
 CREATE TABLE UczestnicyKonferencji (
@@ -170,7 +171,6 @@ GO
 CREATE FUNCTION WolneMiejscaWarsztat(@ID_Warsztatu int)
   RETURNS INT
 AS
-
   BEGIN
     DECLARE @Liczba_miejsc AS int;
     SET @Liczba_miejsc = (SELECT LiczbaMiejsc FROM Warsztaty WHERE ID_Warsztatu = @ID_Warsztatu);
@@ -183,7 +183,6 @@ AS
 
     RETURN (@Liczba_miejsc - @Zarezerwowane);
   END
-
 GO
 
 CREATE FUNCTION WolneMiejscaDzienKonferencji(@ID_Dnia int)
@@ -280,6 +279,7 @@ CREATE PROCEDURE DodajKlienta (
 		END TRY
 		BEGIN CATCH
 			ROLLBACK TRANSACTION
+			THROW
 		END CATCH
 	END
 GO
@@ -325,6 +325,16 @@ CREATE PROCEDURE DodajDzienKonferencji (
 		SET NOCOUNT ON;
 		BEGIN TRY
 			BEGIN TRANSACTION
+				DECLARE @DataRoz date
+				SET @DataRoz = 
+					(select DzienRozpoczecia from Konferencje
+					where ID_Konferencji = @ID_Konferencji)
+				DEClARE @DataZak date
+				SET @DataZak = 
+					(Select DzienZakonczenia from Konferencje 
+					where ID_Konferencji = @ID_Konferencji)
+				IF @Data < @DataRoz OR @Data > @DataZak
+					THROW 51000, 'W podanym dniu nie ma podanej konferencji', 1
 				INSERT INTO DniKonferencji
 				(ID_Konferencji, Data, LiczbaMiejsc)
 				VALUES (@ID_Konferencji, @Data, @LiczbaMiejsc)
@@ -332,6 +342,7 @@ CREATE PROCEDURE DodajDzienKonferencji (
 		END TRY
 		BEGIN CATCH
 			ROLLBACK TRANSACTION
+			THROW
 		END CATCH
 	END
 GO
@@ -342,6 +353,7 @@ GO
 
 CREATE PROCEDURE DodajWarsztat (
 	@ID_Dnia         int,
+	@NazwaWarsztatu	 varchar(30),
 	@Rozpoczecie     time,
 	@Zakonczenie     time,
 	@LiczbaMiejsc    int,
@@ -355,13 +367,15 @@ CREATE PROCEDURE DodajWarsztat (
 		BEGIN TRANSACTION
 				IF @ID_Dnia IS NULL 
 					THROW 51000, 'ID_Dnia jest nullem', 1
+				IF @NazwaWarsztatu IS NULL or @NazwaWarsztatu = ''
+					THROW 51000, 'Nie podales nazwy warsztatu', 1
 				IF @Rozpoczecie IS NULL OR @Zakonczenie IS NULL OR @Zakonczenie <= @Rozpoczecie
 					THROW 51000, 'Niepoprawnie podany czas', 1
 				IF @LiczbaMiejsc IS NOT NULL or @LiczbaMiejsc <= 0
 					THROW 51000, 'Niepoprawna liczba miejsc', 1 
 			INSERT into Warsztaty
-			(ID_Dnia, Rozpoczecie, Zakonczenie, LiczbaMiejsc, Cena, ZnizkaStudencka)
-			VALUES (@ID_Dnia, @Rozpoczecie, @Zakonczenie, @LiczbaMiejsc, @Cena, @ZnizkaStudencka)
+			(ID_Dnia, NazwaWarsztatu, Rozpoczecie, Zakonczenie, LiczbaMiejsc, Cena, ZnizkaStudencka)
+			VALUES (@ID_Dnia, @NazwaWarsztatu, @Rozpoczecie, @Zakonczenie, @LiczbaMiejsc, @Cena, @ZnizkaStudencka)
 		COMMIT TRANSACTION
 		END TRY
 		BEGIN CATCH
