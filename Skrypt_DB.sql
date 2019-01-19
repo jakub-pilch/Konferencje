@@ -148,3 +148,204 @@ CREATE TABLE Platnosci (
 
 
 GO
+
+----------------- Funkcje
+
+IF OBJECT_ID('WolneMiejscaWarsztat', N'FN') IS NOT NULL
+  DROP FUNCTION WolneMiejscaWarsztat
+GO
+
+IF OBJECT_ID('WolneMiejscaDzienKonferencji', N'FN') IS NOT NULL
+  DROP FUNCTION WolneMiejscaDzienKonferencji
+GO
+
+IF OBJECT_ID('CenaRezerwacjiDniaKonferencji', N'FN') IS NOT NULL
+  DROP FUNCTION CenaRezerwacjiDniaKonferencji
+GO
+
+CREATE FUNCTION WolneMiejscaWarsztat(@ID_Warsztatu int)
+  RETURNS INT
+AS
+
+  BEGIN
+    DECLARE @Liczba_miejsc AS int;
+    SET @Liczba_miejsc = (SELECT LiczbaMiejsc FROM Warsztaty WHERE ID_Warsztatu = @ID_Warsztatu);
+
+    DECLARE @Zarezerwowane AS int;
+    SET @Zarezerwowane = (SELECT SUM(LiczbaMiejsc) FROM RezerwacjeWarsztatow WHERE ID_Warsztatu = @ID_Warsztatu);
+
+    IF @Zarezerwowane IS NULL
+      SET @Zarezerwowane = 0;
+
+    RETURN (@Liczba_miejsc - @Zarezerwowane);
+  END
+
+GO
+
+CREATE FUNCTION WolneMiejscaDzienKonferencji(@ID_Dnia int)
+  RETURNS int
+AS
+  BEGIN
+
+    DECLARE @Liczba_Miejsc AS int;
+    SET @Liczba_Miejsc = (SELECT LiczbaMiejsc FROM DniKonferencji WHERE ID_Dnia = @ID_Dnia);
+
+    DECLARE @Zarezerwowane AS int;
+    SET @Zarezerwowane = (SELECT SUM(LiczbaMiejsc) FROM RezerwacjeDni WHERE ID_Dnia = @ID_Dnia);
+
+    IF @Zarezerwowane IS NULL
+      SET @Zarezerwowane = 0
+
+    RETURN (@Liczba_Miejsc - @Zarezerwowane)
+
+  END
+GO
+
+CREATE FUNCTION CenaRezerwacjiDniaKonferencji(@ID_Rezerwacji int)
+  RETURNS int
+AS
+  BEGIN
+    DECLARE @TygodnieDoKonferencji AS int;
+    SET @TygodnieDoKonferencji = (SELECT DATEDIFF(week, DataRezerwacji, (SELECT Data
+                                                                         FROM DniKonferencji
+                                                                         WHERE R.ID_Dnia = DniKonferencji.ID_Dnia))
+                                  FROM RezerwacjeDni AS R
+                                  WHERE ID_Rezerwacji = @ID_Rezerwacji)
+    DECLARE @CenaZaOsobe AS money;
+
+    IF @TygodnieDoKonferencji <= 4
+      SET @CenaZaOsobe = (SELECT (Cena * ProgI)
+                          FROM RezerwacjeDni AS R
+                                 JOIN DniKonferencji AS DK on R.ID_Dnia = DK.ID_Dnia
+                                 JOIN Konferencje AS K ON DK.ID_Konferencji = K.ID_Konferencji
+                                 JOIN CennikKonferencji C on K.ID_Cernnika = C.ID_Cennika)
+    ELSE IF @TygodnieDoKonferencji <= 2
+      SET @CenaZaOsobe = (SELECT (Cena * ProgII)
+                          FROM RezerwacjeDni AS R
+                                 JOIN DniKonferencji AS DK on R.ID_Dnia = DK.ID_Dnia
+                                 JOIN Konferencje AS K ON DK.ID_Konferencji = K.ID_Konferencji
+                                 JOIN CennikKonferencji C on K.ID_Cernnika = C.ID_Cennika)
+    ELSE
+      SET @CenaZaOsobe = (SELECT (Cena * ProgIII)
+                          FROM RezerwacjeDni AS R
+                                 JOIN DniKonferencji AS DK on R.ID_Dnia = DK.ID_Dnia
+                                 JOIN Konferencje AS K ON DK.ID_Konferencji = K.ID_Konferencji
+                                 JOIN CennikKonferencji C on K.ID_Cernnika = C.ID_Cennika)
+
+    DECLARE @ZnizkaStudencka AS float;
+    SET @ZnizkaStudencka = (SELECT ZnizkaStudencka
+                            FROM RezerwacjeDni AS R
+                                   JOIN DniKonferencji AS DK on R.ID_Dnia = DK.ID_Dnia
+                                   JOIN Konferencje AS K ON DK.ID_Konferencji = K.ID_Konferencji
+                                   JOIN CennikKonferencji C on K.ID_Cernnika = C.ID_Cennika)
+
+    DECLARE @LiczbaOsob AS int;
+    SET @LiczbaOsob = (SELECT LiczbaMiejsc FROM RezerwacjeDni WHERE ID_Rezerwacji = @ID_Rezerwacji)
+
+    DECLARE @LiczbaStudentow AS int;
+    SET @LiczbaStudentow = (SELECT COUNT(*)
+                            FROM RezerwacjeDni AS R
+                                   JOIN UczestnicyKonferencji AS K ON K.Rezerwacja = R.ID_Rezerwacji
+                                   JOIN Studenci S2 on K.ID_Uczestnika = S2.ID_Uczestnika)
+
+    RETURN (@CenaZaOsobe * @ZnizkaStudencka * @LiczbaStudentow) + (@CenaZaOsobe * (@LiczbaOsob - @LiczbaStudentow))
+  END
+GO
+
+-------------------------- Procedury
+
+
+-------------------------- Procedury wstawiania danych
+
+IF OBJECT_ID('DodajUczestnikaKonferencji', 'P') IS NOT NULL
+  DROP PROCEDURE DodajUczestnikaKonferencji
+
+IF OBJECT_ID('DodajUczestnikaKonferencji', 'P') IS NOT NULL
+  DROP PROCEDURE DodajUczestnikaWarsztatu
+
+IF OBJECT_ID('DodajPlatnosc', 'P') IS NOT NULL
+  DROP PROCEDURE DodajPlatnosc
+
+IF OBJECT_ID('DodajLokalizacje', 'P') IS NOT NULL
+  DROP PROCEDURE DodajLokalizacje
+
+GO
+
+CREATE PROCEDURE DodajUczestnikaKonferencji
+  (@ID_Rezerwacji    int,
+   @Imie             varchar(16),
+   @Nazwisko         varchar(16),
+   @NumerLegitymacji int)
+AS
+  BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO UczestnicyKonferencji VALUES (@Imie, @Nazwisko, @ID_Rezerwacji);
+
+    IF @NumerLegitymacji IS NOT NULL
+      BEGIN
+        DECLARE @ID_Uczestnika AS int;
+        SET @ID_Uczestnika = (SELECT ID_Uczestnika
+                              FROM UczestnicyKonferencji AS UK
+                              WHERE UK.Imie = @Imie
+                                AND UK.Nazwisko = @Nazwisko
+                                AND UK.Rezerwacja = @ID_Rezerwacji);
+
+        INSERT INTO Studenci VALUES (@ID_Uczestnika, @NumerLegitymacji)
+      END
+  END
+
+GO
+
+CREATE PROCEDURE DodajUczestnikaWarsztatu
+  (@ID_Rezerwacji            int,
+   @ID_UczestnikaKonferencji int)
+AS
+  BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO UczestnicyWarsztatow VALUES (@ID_UczestnikaKonferencji, @ID_Rezerwacji)
+
+  END
+GO
+
+CREATE PROCEDURE DodajPlatnosc
+  (@DataPlatnosci       date,
+   @RezerwacjaWarsztatu bit,
+   @ID_Rezerwacji       int,
+   @Kwota               money)
+AS
+  BEGIN
+    IF @RezerwacjaWarsztatu = 1
+      BEGIN
+        INSERT INTO Platnosci VALUES (@DataPlatnosci, NULL, @ID_Rezerwacji, @Kwota)
+      END
+    ELSE
+      BEGIN
+        INSERT INTO Platnosci VALUES (@DataPlatnosci, @ID_Rezerwacji, NULL, @Kwota)
+      END
+  END
+Go
+
+CREATE PROCEDURE DodajLokalizacje
+  (@Miasto       varchar(16),
+   @Ulica        varchar(16),
+   @KodPocztowy  varchar(8),
+   @NumerBudynku smallint)
+AS
+  BEGIN
+    INSERT INTO Lokalizacje VALUES (@Miasto, @Ulica, @KodPocztowy, @NumerBudynku)
+  END
+Go
+
+CREATE PROCEDURE DodajCennik
+  (@Cena            money,
+   @ZnizkaStudencka float,
+   @ProgI           float,
+   @ProgII          float,
+   @ProgIII         float)
+AS
+  BEGIN
+    INSERT INTO CennikKonferencji VALUES (@Cena, @ZnizkaStudencka, @ProgI, @ProgII, @ProgIII)
+  END
+GO
