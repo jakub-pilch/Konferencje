@@ -50,7 +50,7 @@ CREATE TABLE CennikKonferencji (
   ProgI           float not null,
   ProgII          float not null,
   ProgIII         float not null,
-  CHECK (ProgI < ProgII AND ProgII < ProgIII)
+  CHECK (ProgI < ProgII)
 )
 
 CREATE TABLE Lokalizacje (
