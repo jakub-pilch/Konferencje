@@ -5,6 +5,7 @@ IF EXISTS(SELECT *
   DROP DATABASE Konferencje
 
 CREATE DATABASE Konferencje
+GO
 
 USE Konferencje
 
@@ -716,7 +717,7 @@ AS
 			IF @LiczbaMiejsc IS NOT NULL or @LiczbaMiejsc <= 0
 				RAISERROR ('Niepoprawna liczba miejsc', 10, 1)
 			IF @Cena IS NULL OR	@Cena < 0
-				RAISERROR ('Niepoprawna cena')
+				RAISERROR ('Niepoprawna cena', 10, 1)
 			INSERT into Warsztaty (ID_Dnia, Rozpoczecie, Zakonczenie, LiczbaMiejsc, Cena, ZnizkaStudencka)
 			VALUES (@ID_Dnia, @Rozpoczecie, @Zakonczenie, @LiczbaMiejsc, @Cena, @ZnizkaStudencka)
 		COMMIT TRANSACTION
