@@ -1109,28 +1109,32 @@ GO
 
 CREATE VIEW NajpopularniejszeKonferencje
   AS
-    SELECT k.ID_Konferencji,
-           Nazwa as [Nazwa konferencji],
-           sum(rd.LiczbaMiejsc) / sum(dk.LiczbaMiejsc) as [Stosunek zajetych do wszystkich]
+    SELECT TOP 25 k.ID_Konferencji,
+           Nazwa AS [Nazwa konferencji],
+           CAST(SUM(rd.LiczbaMiejsc) / SUM(dk.LiczbaMiejsc) AS DECIMAL(5,4)) 
+		   AS [Stosunek zajetych do wszystkich]
     FROM Konferencje k
-           left join DniKonferencji dk ON k.ID_Konferencji = dk.ID_Konferencji
-           left join RezerwacjeDni rd on rd.ID_Dnia = dk.ID_Dnia
+           LEFT JOIN DniKonferencji dk ON k.ID_Konferencji = dk.ID_Konferencji
+           LEFT JOIN RezerwacjeDni rd ON rd.ID_Dnia = dk.ID_Dnia
 	WHERE k.DzienZakonczenia< GETDATE()
-    Group by k.ID_Konferencji, Nazwa
+    GROUP BY k.ID_Konferencji, Nazwa
+	ORDER BY [Stosunek zajetych do wszystkich] DESC
 GO
 
 
 CREATE VIEW NajpopularniejszeWarsztaty
   AS
-    SELECT w.ID_Warsztatu, 
+    SELECT TOP 25 w.ID_Warsztatu, 
 	w.Temat,
 	kon.Nazwa,
-	sum(rw.LiczbaMiejsc) / w.LiczbaMiejsc as [Stosunek miejsc zajetych do wszystkich]
+	CAST(sum(rw.LiczbaMiejsc) / w.LiczbaMiejsc AS DECIMAL(5,4)) 
+	AS [Stosunek miejsc zajetych do wszystkich]
     FROM Warsztaty w
-           left join RezerwacjeWarsztatow rw on rw.ID_Warsztatu = w.ID_Warsztatu
+           join RezerwacjeWarsztatow rw on rw.ID_Warsztatu = w.ID_Warsztatu
 		   join DniKonferencji dk on dk.ID_Dnia = w.ID_Dnia
 		   join Konferencje kon on kon.ID_Konferencji = dk.ID_Konferencji
     Group by w.ID_Warsztatu, w.Temat, kon.Nazwa, w.LiczbaMiejsc
+	ORDER BY [Stosunek miejsc zajetych do wszystkich] DESC
 GO
 
 CREATE VIEW NaleznosciKlientow
