@@ -66,6 +66,7 @@ CREATE TABLE Lokalizacje (
   Ulica          varchar(30) not null,
   KodPocztowy    varchar(8)  not null,
   NumerBudynku   smallint    not null,
+  NumerLokalu	 SMALLINT	 NULL,
   Constraint Lokalizacje_PoprawnyKodPocztowy Check (KodPocztowy like '[0-9][0-9]-[0-9][0-9][0-9]'),
   CONSTRAINT Lokalizacje_CKUnikalne UNIQUE NONCLUSTERED (Miasto, Ulica, KodPocztowy, NumerBudynku)
 )
@@ -386,6 +387,18 @@ AS
     RETURN 0
   END
 
+GO
+
+IF OBJECT_ID('IleZaplaconeDlaKonferencji', N'FN') IS NOT NULL
+  DROP FUNCTION IleZaplaconeDlaKonferencji
+GO
+
+CREATE FUNCTION IleZaplaconeDlaKonferencji (@ID_Konferencji int)
+	RETURNS money
+AS
+	BEGIN
+		
+	END
 GO
 
 ------------------------------------ Dodatkowe constrainty
