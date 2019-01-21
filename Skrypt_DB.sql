@@ -72,12 +72,12 @@ CREATE TABLE Lokalizacje (
 )
 
 CREATE TABLE Konferencje (
-  ID_Konferencji   int         not null primary key identity (1, 1),
+  ID_Konferencji   int          not null primary key identity (1, 1),
   Nazwa            varchar(128) not null,
-  DzienRozpoczecia date        not null,
-  DzienZakonczenia date        not null,
-  ID_Cennika       int         not null foreign key references CennikKonferencji (ID_Cennika),
-  Lokalizacja      int         not null foreign key references Lokalizacje (ID_Lokalizacji),
+  DzienRozpoczecia date         not null,
+  DzienZakonczenia date         not null,
+  ID_Cennika       int          not null foreign key references CennikKonferencji (ID_Cennika),
+  Lokalizacja      int          not null foreign key references Lokalizacje (ID_Lokalizacji),
   Constraint PoprawneDaty CHECK (DzienZakonczenia >= DzienRozpoczecia AND
                                  DATEDIFF(year, getdate(), DzienRozpoczecia) < 1),
   CONSTRAINT Konferencje_CKUnikalne UNIQUE NONCLUSTERED (Nazwa, DzienRozpoczecia, Lokalizacja)
@@ -89,7 +89,7 @@ CREATE TABLE DniKonferencji (
   Data           date not null,
   LiczbaMiejsc   int  not null,
   Constraint Dni_PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0),
-  CONSTRAINT DniKonferencji_CKUnikalne UNIQUE NONCLUSTERED (ID_Konferencji,Data)
+  CONSTRAINT DniKonferencji_CKUnikalne UNIQUE NONCLUSTERED (ID_Konferencji, Data)
 )
 
 CREATE TABLE Warsztaty (
@@ -224,12 +224,12 @@ GO
 IF OBJECT_ID('PoprawnaLiczbaDniPrzypisanychDoKonferencji', N'FN') IS NOT NULL
   DROP FUNCTION PoprawnaLiczbaDniPrzypisanychDoKonferencji
 
-  IF OBJECT_ID('IleDoZaplatyDlaDanejRezerwacji', N'FN') IS NOT NULL
-    DROP FUNCTION IleDoZaplatyDlaDanejRezerwacji
-  GO
+IF OBJECT_ID('IleDoZaplatyDlaDanejRezerwacji', N'FN') IS NOT NULL
+  DROP FUNCTION IleDoZaplatyDlaDanejRezerwacji
+GO
 
-  IF OBJECT_ID('IleZaplaconoZaDanaRezerwacje', N'FN') IS NOT NULL
-    DROP FUNCTION IleZaplaconoZaDanaRezerwacje
+IF OBJECT_ID('IleZaplaconoZaDanaRezerwacje', N'FN') IS NOT NULL
+  DROP FUNCTION IleZaplaconoZaDanaRezerwacje
 GO
 
 CREATE FUNCTION WolneMiejscaWarsztat(@ID_Warsztatu int)
@@ -354,6 +354,8 @@ AS
                                    JOIN UczestnicyKonferencji AS UK ON UK.ID_RezerwacjiKonferencji = R.ID_Rezerwacji
                                    JOIN Uczestnicy AS U ON U.ID_Uczestnika = UK.ID_Uczestnika
                                    JOIN Studenci S2 on U.ID_Uczestnika = S2.ID_Uczestnika)
+    IF @ZnizkaStudencka IS NULL
+      SET @ZnizkaStudencka = 1
 
     RETURN (@CenaZaOsobe * @ZnizkaStudencka * @LiczbaStudentow) + (@CenaZaOsobe * (@LiczbaOsob - @LiczbaStudentow))
   END
@@ -385,6 +387,8 @@ AS
                             FROM Warsztaty W
                                    JOIN RezerwacjeWarsztatow R
                                      on W.ID_Warsztatu = R.ID_Warsztatu AND R.ID_Rezerwacji = @ID_Rezerwacji)
+    IF @ZnizkaStudencka IS NULL
+      SET @ZnizkaStudencka = 1
 
     RETURN (@LiczbaStudentow * @CenaWarsztatu * @ZnizkaStudencka) + ((@LiczbaOsob - @LiczbaStudentow) * @CenaWarsztatu)
 
@@ -499,39 +503,40 @@ AS
     RETURN 0
   END
 GO
-CREATE FUNCTION IleDoZaplatyDlaDanejRezerwacji (@ID_Rezerwacji int)
-	RETURNS money
+
+
+CREATE FUNCTION IleDoZaplatyDlaDanejRezerwacji(@ID_Rezerwacji int)
+  RETURNS money
 AS
-	BEGIN
-		DECLARE @CenaZaDzienRezerwacji MONEY
-		SET @CenaZaDzienRezerwacji = dbo.CenaRezerwacjiDniaKonferencji(@ID_Rezerwacji)
-		DECLARE @CenaZaWarsztatyWDanejRezerwacji MONEY
-		SET @CenaZaWarsztatyWDanejRezerwacji =
-			(SELECT SUM(dbo.CenaRezerwacjiWarsztatu(ID_Rezerwacji)) FROM RezerwacjeWarsztatow
-			WHERE RezerwacjaDnia = @ID_Rezerwacji
-			GROUP BY RezerwacjaDnia)
-		RETURN @CenaZaDzienRezerwacji + @CenaZaWarsztatyWDanejRezerwacji
-	END
+  BEGIN
+    DECLARE @CenaZaDzienRezerwacji MONEY
+    SET @CenaZaDzienRezerwacji = dbo.CenaRezerwacjiDniaKonferencji(@ID_Rezerwacji)
+    DECLARE @CenaZaWarsztatyWDanejRezerwacji MONEY
+    SET @CenaZaWarsztatyWDanejRezerwacji =
+    (SELECT SUM(dbo.CenaRezerwacjiWarsztatu(ID_Rezerwacji))
+     FROM RezerwacjeWarsztatow
+     WHERE RezerwacjaDnia = @ID_Rezerwacji
+     GROUP BY RezerwacjaDnia)
+    RETURN @CenaZaDzienRezerwacji + @CenaZaWarsztatyWDanejRezerwacji
+  END
 GO
 
-CREATE FUNCTION IleZaplaconoZaDanaRezerwacje (@ID_Rezerwacji INT)
-	RETURNS MONEY
+CREATE FUNCTION IleZaplaconoZaDanaRezerwacje(@ID_Rezerwacji INT)
+  RETURNS MONEY
 AS
-	BEGIN
-		DECLARE @ZaplataZaKonferencje MONEY
-		SET @ZaplataZaKonferencje =
-			(SELECT SUM(Kwota) FROM Platnosci
-			WHERE RezerwacjaDnia = @ID_Rezerwacji
-			GROUP BY RezerwacjaDnia)
-		DECLARE @ZaplataZaWarsztatyWKonferencji MONEY
-		SET @ZaplataZaWarsztatyWKonferencji =
-			(SELECT SUM(Kwota) FROM Platnosci
-			WHERE RezerwacjaWarsztatu IN
-				(SELECT ID_Rezerwacji FROM RezerwacjeWarsztatow
-				WHERE RezerwacjaDnia = @ID_Rezerwacji)
-			GROUP BY RezerwacjaDnia)
-		RETURN @ZaplataZaKonferencje + @ZaplataZaWarsztatyWKonferencji
-	END
+  BEGIN
+    DECLARE @ZaplataZaKonferencje MONEY
+    SET @ZaplataZaKonferencje =
+    (SELECT SUM(Kwota) FROM Platnosci WHERE RezerwacjaDnia = @ID_Rezerwacji GROUP BY RezerwacjaDnia)
+    DECLARE @ZaplataZaWarsztatyWKonferencji MONEY
+    SET @ZaplataZaWarsztatyWKonferencji =
+    (SELECT SUM(Kwota)
+     FROM Platnosci
+     WHERE RezerwacjaWarsztatu IN
+           (SELECT ID_Rezerwacji FROM RezerwacjeWarsztatow WHERE RezerwacjaDnia = @ID_Rezerwacji)
+     GROUP BY RezerwacjaDnia)
+    RETURN @ZaplataZaKonferencje + @ZaplataZaWarsztatyWKonferencji
+  END
 GO
 ------------------------------------ Dodatkowe constrainty
 
@@ -606,7 +611,7 @@ AS
     BEGIN TRY
     BEGIN TRANSACTION
     IF EXISTS(SELECT * FROM Uczestnicy WHERE PESEL = @PESEL)
-      RAISERROR ('Podany PESEL jest ju? zarejstrowany w obr?bie podanej rezerwacji', 10, 1)
+      RAISERROR ('Podany PESEL jest już zarejstrowany w obrębie podanej rezerwacji', 10, 1)
 
     INSERT INTO Uczestnicy VALUES (@Imie, @Nazwisko, @PESEL);
 
@@ -615,7 +620,7 @@ AS
         IF EXISTS(SELECT *
                   FROM Studenci AS S
                          JOIN Uczestnicy AS U on S.ID_Uczestnika = U.ID_Uczestnika AND U.PESEL != @PESEL)
-          RAISERROR ('Podany numer legitymacji nale?y do innego uczestnika', 10, 1)
+          RAISERROR ('Podany numer legitymacji należy do innego uczestnika', 10, 1)
 
         DECLARE @ID_Uczestnika AS int;
         SET @ID_Uczestnika = (SELECT ID_Uczestnika FROM Uczestnicy AS U WHERE @PESEL = U.PESEL);
@@ -627,8 +632,8 @@ AS
 
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 
@@ -652,7 +657,7 @@ AS
     DECLARE @LiczbaMiejsc AS int;
     SET @LiczbaMiejsc = (SELECT LiczbaMiejsc FROM RezerwacjeDni WHERE ID_Rezerwacji = @ID_Rezerwacji)
     IF (NOT dbo.ZarejestrowaniUczestnicyRezerwacjiDniaKonferencji(@ID_Rezerwacji) < @LiczbaMiejsc)
-      RAISERROR ('Rezerwacja jest pe?na, nie mo?na doda? kolejnego uczestnika', 10, 1);
+      RAISERROR ('Rezerwacja jest pelna, nie mozna dodac kolejnego uczestnika', 10, 1);
 
     INSERT INTO UczestnicyKonferencji VALUES (@ID_Uczestnika, @ID_Rezerwacji);
     COMMIT TRANSACTION
@@ -660,8 +665,8 @@ AS
 
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -677,15 +682,15 @@ AS
     BEGIN TRANSACTION
 
     IF (dbo.KolizjaTrwaniaWarsztatu(@ID_UczestnikaKonferencji, @ID_Rezerwacji) = 1)
-      RAISERROR ('Podany uczestnikw tym czasie bierze udzia? w innym warsztacie', 10, 1)
+      RAISERROR ('Podany uczestnik w tym czasie bierze udzial w innym warsztacie', 10, 1)
 
     IF (dbo.WarsztatNalezyDoKonferencjiUczestnika(@ID_UczestnikaKonferencji, @ID_Rezerwacji) = 0)
-      RAISERROR ('Uczestnik nie bierze udzia?u w konferencji na kt�rej odbywa si? warsztat', 10, 1)
+      RAISERROR ('Uczestnik nie bierze udzialu w konferencji na ktorej odbywa sie warsztat', 10, 1)
 
     DECLARE @LiczbaMiejsc AS int;
     SET @LiczbaMiejsc = (SELECT LiczbaMiejsc FROM RezerwacjeWarsztatow WHERE ID_Rezerwacji = @ID_Rezerwacji)
     IF (NOT dbo.ZarejestrowaniUczestnicyRezerwacjiWarsztatu(@ID_Rezerwacji) < @LiczbaMiejsc)
-      RAISERROR ('Rezerwacja jest pe?na, nie mo?na doda? kolejnego uczestnika', 10, 1);
+      RAISERROR ('Rezerwacja jest pelna, nie mozna dodac kolejnego uczestnika', 10, 1);
 
     DECLARE @ID_RezerwacjiKonferencji AS int;
     SET @ID_RezerwacjiKonferencji = (SELECT RD.ID_Rezerwacji
@@ -697,8 +702,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -714,7 +719,7 @@ AS
     BEGIN TRY
     BEGIN TRANSACTION
     IF (@DataPlatnosci > GETDATE())
-      RAISERROR ('Pr�ba wprowadzenia p?atno?ci z przysz?? dat?', 10, 1);
+      RAISERROR ('Proba wprowadzenia platnosci z przyszla data', 10, 1);
     IF @RezerwacjaWarsztatu = 1
       BEGIN
         INSERT INTO Platnosci VALUES (@DataPlatnosci, NULL, @ID_Rezerwacji, @Kwota)
@@ -728,8 +733,8 @@ AS
 
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 
@@ -751,17 +756,17 @@ AS
                 AND Ulica = @Ulica
                 AND KodPocztowy = @KodPocztowy
                 AND NumerBudynku = @NumerBudynku)
-      RAISERROR ('Podana lokalizacja ju? istnieje w bazie', 10, 1)
+      RAISERROR ('Podana lokalizacja juz istnieje w bazie', 10, 1)
     IF (@KodPocztowy NOT LIKE '[0-9][0-9]-[0-9][0-9][0-9]')
-      RAISERROR ('B??dny format kodu pocztowego', 10, 1)
+      RAISERROR ('Bledny format kodu pocztowego', 10, 1)
 
     INSERT INTO Lokalizacje VALUES (@Miasto, @Ulica, @KodPocztowy, @NumerBudynku)
     COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 Go
@@ -776,16 +781,16 @@ AS
     BEGIN TRY
     BEGIN TRANSACTION
     IF (@Cena < 0)
-      RAISERROR ('Pr�ba wprowadzenia ujemnej ceny udzia?u w dniu konferencji', 10, 1)
+      RAISERROR ('Proba wprowadzenia ujemnej ceny udzialu w dniu konferencji', 10, 1)
     IF (@ProgI > @ProgII)
-      RAISERROR ('Podano progi cenowe w b??dnej kolejno?ci', 10, 1)
+      RAISERROR ('Podano progi cenowe w blednej kolejnosci', 10, 1)
     INSERT INTO CennikKonferencji VALUES (@Cena, @ZnizkaStudencka, @ProgI, @ProgII)
     COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -807,28 +812,26 @@ AS
   BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
-		BEGIN TRANSACTION
-			IF @Imie IS NULL OR @Nazwisko IS NULL
-			  RAISERROR ('Brak imienia lub nazwiska', 10, 1)
-			IF @Miasto IS NULL OR @Ulica IS NULL OR @KodPocztowy IS NULL
-			OR @KodPocztowy NOT LIKE '[0-9][0-9]-[0-9][0-9][0-9]'
-			   OR @NrBudynku IS NULL
-			  RAISERROR ('Adres jest niepoprawny', 10, 1)
-			IF @NIP IS NOT NULL
-			AND @NIP NOT LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
-			  RAISERROR ('Niepoprawny NIP', 10, 1)
-			IF EXISTS(SELECT * FROM Klienci WHERE NIP = @NIP)
-			  RAISERROR ('Podany NIP wystepuje w bazie.', 10, 1)
-			INSERT into Klienci (Nazwa, NIP, Imie, Nazwisko, Miasto, Ulica,
-			KodPocztowy, NrBudynku, NrLokalu, Telefon, EMail)
-			VALUES (@Nazwa, @NIP, @Imie, @Nazwisko, @Miasto, @Ulica,
-			@KodPocztowy, @NrBudynku, @NrLokalu, @Telefon, @Email)
-		COMMIT TRANSACTION
+    BEGIN TRANSACTION
+    IF @Imie IS NULL OR @Nazwisko IS NULL
+      RAISERROR ('Brak imienia lub nazwiska', 10, 1)
+    IF @Miasto IS NULL OR @Ulica IS NULL OR @KodPocztowy IS NULL
+       OR @KodPocztowy NOT LIKE '[0-9][0-9]-[0-9][0-9][0-9]'
+       OR @NrBudynku IS NULL
+      RAISERROR ('Adres jest niepoprawny', 10, 1)
+    IF @NIP IS NOT NULL
+       AND @NIP NOT LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+      RAISERROR ('Niepoprawny NIP', 10, 1)
+    IF EXISTS(SELECT * FROM Klienci WHERE NIP = @NIP)
+      RAISERROR ('Podany NIP wystepuje w bazie.', 10, 1)
+    INSERT into Klienci (Nazwa, NIP, Imie, Nazwisko, Miasto, Ulica, KodPocztowy, NrBudynku, NrLokalu, Telefon, EMail)
+    VALUES (@Nazwa, @NIP, @Imie, @Nazwisko, @Miasto, @Ulica, @KodPocztowy, @NrBudynku, @NrLokalu, @Telefon, @Email)
+    COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
-		ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    ROLLBACK TRANSACTION
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -844,19 +847,17 @@ AS
   BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
-		BEGIN TRANSACTION
-			IF (@DzienRozpoczecia > @DzienZakonczenia)
-				RAISERROR ('Podane daty sa niepoprawne', 10, 1)
-			INSERT INTO Konferencje (Nazwa, DzienRozpoczecia, DzienZakonczenia,
-			ID_Cennika, Lokalizacja)
-			VALUES (@Nazwa, @DzienRozpoczecia, @DzienZakonczenia,
-			@ID_Cennika, @Lokalizacja)
-		COMMIT TRANSACTION
+    BEGIN TRANSACTION
+    IF (@DzienRozpoczecia > @DzienZakonczenia)
+      RAISERROR ('Podane daty sa niepoprawne', 10, 1)
+    INSERT INTO Konferencje (Nazwa, DzienRozpoczecia, DzienZakonczenia, ID_Cennika, Lokalizacja)
+    VALUES (@Nazwa, @DzienRozpoczecia, @DzienZakonczenia, @ID_Cennika, @Lokalizacja)
+    COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
-		ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    ROLLBACK TRANSACTION
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -870,25 +871,22 @@ AS
   BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
-		BEGIN TRANSACTION
-			DECLARE @DataRoz date
-			SET @DataRoz =
-				(select DzienRozpoczecia from Konferencje
-				where ID_Konferencji = @ID_Konferencji)
-			DECLARE @DataZak date
-			SET @DataZak =
-				(Select DzienZakonczenia from Konferencje
-				where ID_Konferencji = @ID_Konferencji)
-			IF @Data < @DataRoz OR @Data > @DataZak
-					RAISERROR ('W podanym dniu nie ma podanej konferencji', 10, 1)
-			INSERT INTO DniKonferencji (ID_Konferencji, Data, LiczbaMiejsc)
-			VALUES (@ID_Konferencji, @Data, @LiczbaMiejsc)
-		COMMIT TRANSACTION
+    BEGIN TRANSACTION
+    DECLARE @DataRoz date
+    SET @DataRoz =
+    (select DzienRozpoczecia from Konferencje where ID_Konferencji = @ID_Konferencji)
+    DECLARE @DataZak date
+    SET @DataZak =
+    (Select DzienZakonczenia from Konferencje where ID_Konferencji = @ID_Konferencji)
+    IF @Data < @DataRoz OR @Data > @DataZak
+      RAISERROR ('W podanym dniu nie ma podanej konferencji', 10, 1)
+    INSERT INTO DniKonferencji (ID_Konferencji, Data, LiczbaMiejsc) VALUES (@ID_Konferencji, @Data, @LiczbaMiejsc)
+    COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
-		ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    ROLLBACK TRANSACTION
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -905,26 +903,24 @@ AS
   BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
-		BEGIN TRANSACTION
-			IF @ID_Dnia IS NULL
-				RAISERROR ('ID_Dnia jest nullem', 10, 1)
-			IF @Rozpoczecie IS NULL OR @Zakonczenie IS NULL
-			OR @Zakonczenie <= @Rozpoczecie
-				RAISERROR ('Niepoprawnie podany czas', 10, 1)
-			IF @LiczbaMiejsc IS NOT NULL OR @LiczbaMiejsc <= 0
-				RAISERROR ('Niepoprawna liczba miejsc', 10, 1)
-			IF @Cena IS NULL OR	@Cena < 0
-				RAISERROR ('Niepoprawna cena', 10, 1)
-			INSERT into Warsztaty (ID_Dnia, Rozpoczecie, Zakonczenie,
-			LiczbaMiejsc, Cena, ZnizkaStudencka)
-			VALUES (@ID_Dnia, @Rozpoczecie, @Zakonczenie,
-			@LiczbaMiejsc, @Cena, @ZnizkaStudencka)
-		COMMIT TRANSACTION
+    BEGIN TRANSACTION
+    IF @ID_Dnia IS NULL
+      RAISERROR ('ID_Dnia jest nullem', 10, 1)
+    IF @Rozpoczecie IS NULL OR @Zakonczenie IS NULL
+       OR @Zakonczenie <= @Rozpoczecie
+      RAISERROR ('Niepoprawnie podany czas', 10, 1)
+    IF @LiczbaMiejsc IS NOT NULL OR @LiczbaMiejsc <= 0
+      RAISERROR ('Niepoprawna liczba miejsc', 10, 1)
+    IF @Cena IS NULL OR @Cena < 0
+      RAISERROR ('Niepoprawna cena', 10, 1)
+    INSERT into Warsztaty (ID_Dnia, Rozpoczecie, Zakonczenie, LiczbaMiejsc, Cena, ZnizkaStudencka)
+    VALUES (@ID_Dnia, @Rozpoczecie, @Zakonczenie, @LiczbaMiejsc, @Cena, @ZnizkaStudencka)
+    COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
-		ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    ROLLBACK TRANSACTION
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -955,8 +951,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -1009,8 +1005,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -1031,8 +1027,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -1045,14 +1041,16 @@ AS
     IF (@ID_Rezerwacji IS NULL)
       RAISERROR ('Jako ID podano null', 10, 1)
 
+    EXEC dbo.UsuniecieUczestnikowRezerwacjiWarsztatu @ID_Rezerwacji;
+
     DELETE FROM RezerwacjeWarsztatow WHERE @ID_Rezerwacji = ID_Rezerwacji;
 
     COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -1065,18 +1063,28 @@ AS
     IF (@ID_Rezerwacji IS NULL)
       RAISERROR ('Jako ID podano null', 10, 1)
 
+    DECLARE CursorWarsztatu CURSOR FOR SELECT ID_Rezerwacji
+                                       FROM RezerwacjeWarsztatow AS RW
+                                       WHERE RW.RezerwacjaDnia = @ID_Rezerwacji
+    WHILE @@FETCH_STATUS = 0
+      BEGIN
+        EXEC dbo.AnulowanieRezerwacjiWarsztatu FETCH NEXT FROM CursorWarsztatu;
+      END
+    CLOSE CursorWarsztatu;
+    DEALLOCATE CursorWarsztatu;
+    EXEC dbo.UsuniecieUczestnikowRezerwacjiDniaKonferencji @ID_Rezerwacji;
+
     DELETE FROM RezerwacjeDni WHERE @ID_Rezerwacji = ID_Rezerwacji;
 
     COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
-
 
 CREATE PROCEDURE ZmianaCennikaKonferencji(@ID_Konferencji int, @ID_Cennika int)
 AS
@@ -1092,15 +1100,15 @@ AS
               FROM DniKonferencji AS DK
                      JOIN RezerwacjeDni RD on DK.ID_Dnia = RD.ID_Dnia
               WHERE ID_Konferencji = @ID_Konferencji)
-      RAISERROR ('Dla konferencji istniej? rezerwacje, nie mo?na zmieni? cennika', 10, 1)
+      RAISERROR ('Dla konferencji istnieja rezerwacje, nie mozna zmienic cennika', 10, 1)
 
     UPDATE Konferencje SET ID_Cennika = @ID_Cennika WHERE ID_Konferencji = @ID_Konferencji
     COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -1117,34 +1125,34 @@ AS
       RAISERROR ('Podane ID jest nullem', 10, 1)
 
     IF EXISTS(SELECT * FROM Konferencje WHERE ID_Cennika = @ID_Cennika)
-      RAISERROR ('Nie mo?na zmieni? cennika, je?li jest u?ywany przez chocia? jedn? konferencj?', 10, 1);
+      RAISERROR ('Nie mozna zmienic cennika, jesli jest uzywany przez chociaz jedna konferencje', 10, 1);
 
     IF (@Cena IS NOT NULL)
       IF (@Cena < 0)
-        RAISERROR ('Podano ujemn? cen?', 10, 1)
+        RAISERROR ('Podano ujemna cen?', 10, 1)
       ELSE
         UPDATE CennikKonferencji SET Cena = @Cena WHERE ID_Cennika = @ID_Cennika
 
     IF (@ZnizkaStudencka NOT BETWEEN 0 AND 1)
-      RAISERROR ('Podano nieprawid?ow? warto?? zni?ki', 10, 1)
+      RAISERROR ('Podano nieprawidlowa wartosc znizki', 10, 1)
     ELSE
       UPDATE CennikKonferencji SET ZnizkaStudencka = @ZnizkaStudencka WHERE ID_Cennika = @ID_Cennika
 
     IF (@ProgI IS NOT NULL)
       IF (@ProgI > (SELECT ProgII FROM CennikKonferencji WHERE ID_Cennika = @ID_Cennika))
-        RAISERROR ('Prog I musi by? ni?szy b?d? r�wny progowi II', 10, 1)
+        RAISERROR ('Prog I musi byc nizszy badz rowny progowi II', 10, 1)
       ELSE
         IF (@ProgI NOT BETWEEN 0 AND 1)
-          RAISERROR ('Podano nieprawid?ow? warto?? progu cenowego', 10, 1)
+          RAISERROR ('Podano nieprawidlowa wartosc progu cenowego', 10, 1)
         ELSE
           UPDATE CennikKonferencji SET ProgI = @ProgI WHERE ID_Cennika = @ID_Cennika
 
     IF (@ProgII IS NOT NULL)
       IF (@ProgII < (SELECT ProgI FROM CennikKonferencji WHERE ID_Cennika = @ID_Cennika))
-        RAISERROR ('Prog II musi by? wyzszy b?d? r�wny progowi I', 10, 1)
+        RAISERROR ('Prog II byc nizszy badz rowny progowi I', 10, 1)
       ELSE
         IF (@ProgII NOT BETWEEN 0 AND 1)
-          RAISERROR ('Podano nieprawdi?ow? warto?? porgu cenowego', 10, 1)
+          RAISERROR ('Podano nieprawdilowa wartosc porgu cenowego', 10, 1)
         ELSE
           UPDATE CennikKonferencji SET ProgII = @ProgII WHERE ID_Cennika = @ID_Cennika
     COMMIT TRANSACTION
@@ -1152,8 +1160,8 @@ AS
 
     BEGIN CATCH
     ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 
@@ -1175,43 +1183,40 @@ AS
   BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
-		BEGIN TRANSACTION
-			IF @ID_Klienta IS NULL
-				RAISERROR ('ID_Klienta jest nullem', 10, 1)
-			IF (@Imie IS NOT NULL AND @Nazwisko IS NOT NULL) OR
-			(@Miasto IS NOT NULL AND @Ulica IS NOT NULL AND
-			@KodPocztowy IS NOT NULL AND @NrBudynku IS NOT NULL) OR
-			@Telefon IS NOT NULL OR @EMail IS NOT NULL
-				IF @Imie IS NOT NULL AND @Nazwisko IS NOT NULL
-				  UPDATE KLIENCI
-				  SET Imie     = @imie,
-					  Nazwisko = @Nazwisko
-				  where ID_Klienta = @ID_Klienta
-				IF @Miasto IS NOT NULL AND @Ulica IS NOT NULL AND
-				@KodPocztowy IS NOT NULL AND @NrBudynku IS NOT NULL
-				  UPDATE KLIENCI
-				  SET Miasto      = @Miasto,
-					  Ulica       = @Ulica,
-					  KodPocztowy = @KodPocztowy,
-					  NrBudynku   = @NrBudynku
-				  where ID_Klienta = @ID_Klienta
-					IF @NrLokalu IS NOT NULL
-						UPDATE KLIENCI SET NrLokalu = @NrLokalu
-						WHERE ID_Klienta = @ID_Klienta
-				IF @Telefon IS NOT NULL
-					UPDATE KLIENCI SET Telefon = @Telefon
-					WHERE ID_Klienta = @ID_Klienta
-				IF @EMail IS NOT NULL
-					UPDATE KLIENCI SET EMail = @EMail
-					WHERE ID_Klienta = @ID_Klienta
-			ELSE
-				RAISERROR ('Niepoprawnie podane dane', 10, 1)
-		COMMIT TRANSACTION
+    BEGIN TRANSACTION
+    IF @ID_Klienta IS NULL
+      RAISERROR ('ID_Klienta jest nullem', 10, 1)
+    IF (@Imie IS NOT NULL AND @Nazwisko IS NOT NULL) OR
+       (@Miasto IS NOT NULL AND @Ulica IS NOT NULL AND
+        @KodPocztowy IS NOT NULL AND @NrBudynku IS NOT NULL) OR
+       @Telefon IS NOT NULL OR @EMail IS NOT NULL
+      IF @Imie IS NOT NULL AND @Nazwisko IS NOT NULL
+        UPDATE KLIENCI
+        SET Imie     = @imie,
+            Nazwisko = @Nazwisko
+        where ID_Klienta = @ID_Klienta
+    IF @Miasto IS NOT NULL AND @Ulica IS NOT NULL AND
+       @KodPocztowy IS NOT NULL AND @NrBudynku IS NOT NULL
+      UPDATE KLIENCI
+      SET Miasto      = @Miasto,
+          Ulica       = @Ulica,
+          KodPocztowy = @KodPocztowy,
+          NrBudynku   = @NrBudynku
+      where ID_Klienta = @ID_Klienta
+    IF @NrLokalu IS NOT NULL
+      UPDATE KLIENCI SET NrLokalu = @NrLokalu WHERE ID_Klienta = @ID_Klienta
+    IF @Telefon IS NOT NULL
+      UPDATE KLIENCI SET Telefon = @Telefon WHERE ID_Klienta = @ID_Klienta
+    IF @EMail IS NOT NULL
+      UPDATE KLIENCI SET EMail = @EMail WHERE ID_Klienta = @ID_Klienta
+    ELSE
+      RAISERROR ('Niepoprawnie podane dane', 10, 1)
+    COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
-		ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    ROLLBACK TRANSACTION
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -1227,28 +1232,27 @@ AS
   BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
-		BEGIN TRANSACTION
-			IF @ID_Konferencji IS NULL
-				RAISERROR ('ID_Konferencji jest nullem', 10, 1)
-			IF EXISTS
-			(select ID_Rezerwacji
-			 from RezerwacjeDni
-			 where ID_Dnia in
-			(select ID_Dnia from DniKonferencji where ID_Konferencji = @ID_Konferencji))
-				RAISERROR ('Nie mozesz usunac konferencji -
+    BEGIN TRANSACTION
+    IF @ID_Konferencji IS NULL
+      RAISERROR ('ID_Konferencji jest nullem', 10, 1)
+    IF EXISTS
+    (select ID_Rezerwacji
+     from RezerwacjeDni
+     where ID_Dnia in
+           (select ID_Dnia from DniKonferencji where ID_Konferencji = @ID_Konferencji))
+      RAISERROR ('Nie mozesz usunac konferencji -
 				istnieje juz dla niej rezerwacja', 10, 1)
-			DELETE FROM Warsztaty
-			where ID_Dnia in
-				  (select ID_Dnia from DniKonferencji
-				  WHERE ID_Konferencji = @ID_Konferencji)
-			DELETE FROM DniKonferencji where ID_Konferencji = @ID_Konferencji
-			DELETE FROM Konferencje where ID_Konferencji = @ID_Konferencji
-		COMMIT TRANSACTION
+    DELETE FROM Warsztaty
+    where ID_Dnia in
+          (select ID_Dnia from DniKonferencji WHERE ID_Konferencji = @ID_Konferencji)
+    DELETE FROM DniKonferencji where ID_Konferencji = @ID_Konferencji
+    DELETE FROM Konferencje where ID_Konferencji = @ID_Konferencji
+    COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
-		ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    ROLLBACK TRANSACTION
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -1260,22 +1264,21 @@ AS
   BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
-		BEGIN TRANSACTION
-			IF @ID_Warsztatu IS NULL
-				RAISERROR ('ID_Warsztatu jest nullem', 10, 1)
-			IF EXISTS
-			(select ID_Rezerwacji from RezerwacjeWarsztatow
-			WHERE ID_Warsztatu = @ID_Warsztatu)
-				RAISERROR ('Nie mozesz usunac warsztatu -
+    BEGIN TRANSACTION
+    IF @ID_Warsztatu IS NULL
+      RAISERROR ('ID_Warsztatu jest nullem', 10, 1)
+    IF EXISTS
+    (select ID_Rezerwacji from RezerwacjeWarsztatow WHERE ID_Warsztatu = @ID_Warsztatu)
+      RAISERROR ('Nie mozesz usunac warsztatu -
 				istnieje juz dla niego rezerwacja', 10, 1)
-			ELSE
-				DELETE FROM Warsztaty where ID_Warsztatu = @ID_Warsztatu
-		COMMIT TRANSACTION
+    ELSE
+      DELETE FROM Warsztaty where ID_Warsztatu = @ID_Warsztatu
+    COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
-		ROLLBACK TRANSACTION
-      DECLARE @msg nvarchar(2048) = error_message()
-      RAISERROR (@msg,10,1)
+    ROLLBACK TRANSACTION
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
     END CATCH
   END
 GO
@@ -1386,9 +1389,9 @@ GO
 CREATE VIEW NajaktywniejsiKlienci
   AS
     SELECT TOP 10 Imie,
-           Nazwisko,
-           K.ID_Klienta,
-           [dbo].LiczbaRezerwacjiMiejscKlienta(K.ID_Klienta) AS 'Liczba zarezerwowanych miejsc'
+               Nazwisko,
+               K.ID_Klienta,
+               [dbo].LiczbaRezerwacjiMiejscKlienta(K.ID_Klienta) AS 'Liczba zarezerwowanych miejsc'
     FROM Klienci AS K
     ORDER BY [dbo].LiczbaRezerwacjiMiejscKlienta(K.ID_Klienta)
 GO
@@ -1401,17 +1404,16 @@ CREATE VIEW NadchodzaceKonferencje
            Miasto + ', ' + Ulica + ' ' + NumerBudynku + ', ' + KodPocztowy as Adres,
            DzienRozpoczecia,
            DzienZakonczenia,
-           DATEDIFF(dd, DzienRozpoczecia, DzienZakonczenia) as [Czas Trwania]
+           DATEDIFF(dd, DzienRozpoczecia, DzienZakonczenia)                as [Czas Trwania]
     FROM Konferencje k
-    join Lokalizacje l
-	ON k.Lokalizacja = l.ID_Lokalizacji
+           join Lokalizacje l ON k.Lokalizacja = l.ID_Lokalizacji
     WHERE DzienRozpoczecia > GETDATE()
 GO
 
 CREATE VIEW NadchodzaceWarsztaty
   AS
     SELECT ID_Warsztatu,
-           k.Nazwa as [Nazwa konferencji],
+           k.Nazwa                                as [Nazwa konferencji],
            Data,
            Rozpoczecie,
            Zakonczenie,
@@ -1428,46 +1430,42 @@ GO
 CREATE VIEW NajpopularniejszeKonferencje
   AS
     SELECT TOP 25 k.ID_Konferencji,
-           Nazwa AS [Nazwa konferencji],
-           CAST(SUM(rd.LiczbaMiejsc) / SUM(dk.LiczbaMiejsc) AS DECIMAL(5,4))
-		   AS [Stosunek zajetych do wszystkich]
+               Nazwa                                                              AS [Nazwa konferencji],
+               CAST(SUM(rd.LiczbaMiejsc) / SUM(dk.LiczbaMiejsc) AS DECIMAL(5, 4)) AS [Stosunek zajetych do wszystkich]
     FROM Konferencje k
            LEFT JOIN DniKonferencji dk ON k.ID_Konferencji = dk.ID_Konferencji
            LEFT JOIN RezerwacjeDni rd ON rd.ID_Dnia = dk.ID_Dnia
-	WHERE k.DzienZakonczenia< GETDATE()
+    WHERE k.DzienZakonczenia < GETDATE()
     GROUP BY k.ID_Konferencji, Nazwa
-	ORDER BY [Stosunek zajetych do wszystkich] DESC
+    ORDER BY [Stosunek zajetych do wszystkich] DESC
 GO
 
 
 CREATE VIEW NajpopularniejszeWarsztaty
   AS
     SELECT TOP 25 w.ID_Warsztatu,
-	w.Temat,
-	kon.Nazwa,
-	CAST(sum(rw.LiczbaMiejsc) / w.LiczbaMiejsc AS DECIMAL(5,4))
-	AS [Stosunek miejsc zajetych do wszystkich]
+               w.Temat,
+               kon.Nazwa,
+               CAST(sum(rw.LiczbaMiejsc) / w.LiczbaMiejsc AS DECIMAL(5, 4)) AS [Stosunek miejsc zajetych do wszystkich]
     FROM Warsztaty w
            join RezerwacjeWarsztatow rw on rw.ID_Warsztatu = w.ID_Warsztatu
-		   join DniKonferencji dk on dk.ID_Dnia = w.ID_Dnia
-		   join Konferencje kon on kon.ID_Konferencji = dk.ID_Konferencji
+           join DniKonferencji dk on dk.ID_Dnia = w.ID_Dnia
+           join Konferencje kon on kon.ID_Konferencji = dk.ID_Konferencji
     Group by w.ID_Warsztatu, w.Temat, kon.Nazwa, w.LiczbaMiejsc
-	ORDER BY [Stosunek miejsc zajetych do wszystkich] DESC
+    ORDER BY [Stosunek miejsc zajetych do wszystkich] DESC
 GO
 
 CREATE VIEW NaleznosciKlientow
   AS
     SELECT k.ID_Klienta,
-		   kon.ID_Konferencji,
-		   kon.Nazwa,
+           kon.ID_Konferencji,
+           kon.Nazwa,
            ISNULL(dbo.IleDoZaplatyDlaDanejRezerwacji(rd.ID_Rezerwacji), 0)
-		   - ISNULL(dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji), 0)
-		   AS [Zalegla oplata]
+             -
+           ISNULL(dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji), 0) AS [Zalegla oplata]
     FROM RezerwacjeDni rd
-		   join DniKonferencji dk
-		   on dk.ID_Dnia = rd.ID_Dnia
-		   join Konferencje kon
-		   on kon.ID_Konferencji = dk.ID_Konferencji
+           join DniKonferencji dk on dk.ID_Dnia = rd.ID_Dnia
+           join Konferencje kon on kon.ID_Konferencji = dk.ID_Konferencji
            right join Klienci k on rd.ID_Klienta = k.ID_Klienta
     Group by k.ID_Klienta, kon.ID_Konferencji, kon.Nazwa, rd.ID_Rezerwacji
 GO
@@ -1475,21 +1473,19 @@ GO
 CREATE VIEW NaleznosciKlientowPoTerminie
   AS
     SELECT k.ID_Klienta,
-		   kon.ID_Konferencji,
-		   kon.Nazwa,
+           kon.ID_Konferencji,
+           kon.Nazwa,
            ISNULL(dbo.IleDoZaplatyDlaDanejRezerwacji(rd.ID_Rezerwacji), 0)
-		   - ISNULL(dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji), 0)
-		   AS [Zalegla oplata]
+             -
+           ISNULL(dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji), 0) AS [Zalegla oplata]
     FROM RezerwacjeDni rd
-		   join DniKonferencji dk
-		   on dk.ID_Dnia = rd.ID_Dnia
-		   join Konferencje kon
-		   on kon.ID_Konferencji = dk.ID_Konferencji
+           join DniKonferencji dk on dk.ID_Dnia = rd.ID_Dnia
+           join Konferencje kon on kon.ID_Konferencji = dk.ID_Konferencji
            right join Klienci k on rd.ID_Klienta = k.ID_Klienta
     WHERE dbo.IleDoZaplatyDlaDanejRezerwacji(rd.ID_Rezerwacji)
-	- dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji) > 0
-	AND DATEDIFF(dd, rd.DataRezerwacji, GetDate()) >= 7
-	Group by k.ID_Klienta, kon.ID_Konferencji, kon.Nazwa, rd.ID_Rezerwacji
+            - dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji) > 0
+      AND DATEDIFF(dd, rd.DataRezerwacji, GetDate()) >= 7
+    Group by k.ID_Klienta, kon.ID_Konferencji, kon.Nazwa, rd.ID_Rezerwacji
 GO
 
 -- Procedury zwracajace dane
@@ -1506,7 +1502,7 @@ AS
     IF @ID_Konferencji IS NULL
       THROW 51000, 'ID_Konferencji jest nullem', 1
     SELECT ID_Warsztatu,
-           k.Nazwa as [Nazwa konferencji],
+           k.Nazwa                                as [Nazwa konferencji],
            Data,
            Rozpoczecie,
            Zakonczenie,

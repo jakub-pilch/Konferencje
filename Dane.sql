@@ -8,9 +8,11 @@ EXEC dbo.DodajLokalizacje 'Kraków','Dietla','44-444',1;
 
 EXEC dbo.DodajKonferencje 'Konfa','01-10-2019','01-11-2019',1,1
 
-EXEC dbo.DodajDzienKonferencji 1,'01-10-2018',10;
+EXEC dbo.DodajDzienKonferencji 1,'01-10-2019',10;
 
 SELECT * FROM dbo.Konferencje
 SELECT *
 FROM dbo.Klienci
 SELECT * FROM dbo.DniKonferencji
+
+SELECT * FROM CennikKonferencji
