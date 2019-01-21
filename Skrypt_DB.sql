@@ -388,15 +388,16 @@ AS
 
 GO
 
-IF OBJECT_ID('IleZaplaconeDlaKonferencji', N'FN') IS NOT NULL
-  DROP FUNCTION IleZaplaconeDlaKonferencji
+IF OBJECT_ID('IleDoZaplatyDlaDanejRezerwacji', N'FN') IS NOT NULL
+  DROP FUNCTION IleDoZaplatyDlaDanejRezerwacji
 GO
 
-CREATE FUNCTION IleZaplaconeDlaKonferencji (@ID_Konferencji int)
+CREATE FUNCTION IleDoZaplatyDlaDanejRezerwacjii (@ID_Rezerwacji int)
 	RETURNS money
 AS
 	BEGIN
-		
+		DECLARE @CenaZaDzienRezerwacji MONEY 
+		SET @CenaZaDzienRezerwacji = dbo.CenaRezerwacjiDniaKonferencji(@ID_Rezerwacji)
 	END
 GO
 
@@ -1088,6 +1089,7 @@ CREATE VIEW NaleznosciKlientow
   AS
     SELECT k.ID_Klienta,
 		   kon.ID_Konferencji,
+		   w.Temat,
 		   kon.Nazwa,
            dbo.CenaRezerwacjiDniaKonferencji(rd.ID_Rezerwacji) + dbo.CenaRezerwacjiWarsztatu(rw.ID_Rezerwacji) as [Zalegla oplata]
     FROM RezerwacjeDni rd
@@ -1100,7 +1102,7 @@ CREATE VIEW NaleznosciKlientow
            right join Klienci k on rd.ID_Klienta = k.ID_Klienta
            left join Platnosci p on p.RezerwacjaDnia = rd.ID_Rezerwacji or p.RezerwacjaWarsztatu = rw.ID_Rezerwacji
     where p.ID_Platnosci is null
-    Group by k.ID_Klienta, kon.ID_Konferencji, kon.Nazwa, rd.ID_Rezerwacji, rw.ID_Rezerwacji
+    Group by k.ID_Klienta, kon.ID_Konferencji, w.Temat, kon.Nazwa, rd.ID_Rezerwacji, rw.ID_Rezerwacji
 GO
 
 CREATE VIEW NaleznosciKlientowPoTerminie
