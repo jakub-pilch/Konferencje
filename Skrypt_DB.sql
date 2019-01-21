@@ -86,7 +86,8 @@ CREATE TABLE DniKonferencji (
   ID_Konferencji int  not null foreign key references Konferencje (ID_Konferencji),
   Data           date not null,
   LiczbaMiejsc   int  not null,
-  Constraint Dni_PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0)
+  Constraint Dni_PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0),
+  CONSTRAINT DniKonferencji_CKUnikalne UNIQUE NONCLUSTERED (ID_Konferencji,Data)
 )
 
 CREATE TABLE Warsztaty (
@@ -483,7 +484,7 @@ AS
                                    JOIN DniKonferencji DK ON Konferencje.ID_Konferencji = DK.ID_Konferencji
                             WHERE ID_Dnia = @ID_Dnia)
 
-    IF (@DataDnia BETWEEN @DataRozpoczecia AND @DataZakonczenia AND (SELECT COUNT(*) FROM DniKonferencji WHERE ID_Dnia=@ID_Dnia)=1)
+    IF (@DataDnia BETWEEN @DataRozpoczecia AND @DataZakonczenia)
       RETURN 1
 
     RETURN 0
