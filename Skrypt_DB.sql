@@ -75,7 +75,8 @@ CREATE TABLE Konferencje (
   DzienZakonczenia date        not null,
   ID_Cennika       int         not null foreign key references CennikKonferencji (ID_Cennika),
   Lokalizacja      int         not null foreign key references Lokalizacje (ID_Lokalizacji),
-  Constraint PoprawneDaty CHECK (DzienZakonczenia >= DzienRozpoczecia)
+  Constraint PoprawneDaty CHECK (DzienZakonczenia >= DzienRozpoczecia AND
+                                 DATEDIFF(year, getdate(), DzienRozpoczecia) < 1)
 )
 
 CREATE TABLE DniKonferencji (
@@ -199,6 +200,14 @@ IF OBJECT_ID('WarsztatNalezyDoKonferencjiUczestnika', N'FN') IS NOT NULL
   DROP FUNCTION WarsztatNalezyDoKonferencjiUczestnika
 GO
 
+IF OBJECT_ID('ZarejestrowaniUczestnicyRezerwacjiDniaKonferencji', N'FN') IS NOT NULL
+  DROP FUNCTION ZarejestrowaniUczestnicyRezerwacjiDniaKonferencji
+GO
+
+IF OBJECT_ID('ZarejestrowaniUczestnicyRezerwacjiWarsztatu', N'FN') IS NOT NULL
+  DROP FUNCTION ZarejestrowaniUczestnicyRezerwacjiWarsztatu
+GO
+
 CREATE FUNCTION WolneMiejscaWarsztat(@ID_Warsztatu int)
   RETURNS INT
 AS
@@ -236,6 +245,31 @@ AS
 
   END
 GO
+
+CREATE FUNCTION ZarejestrowaniUczestnicyRezerwacjiDniaKonferencji(@ID_Rezerwacji int)
+  RETURNS int
+AS
+  BEGIN
+    DECLARE @Zarejestrowani AS int;
+    SET @Zarejestrowani = (SELECT COUNT(*) FROM UczestnicyKonferencji WHERE ID_RezerwacjiKonferencji = @ID_Rezerwacji);
+
+    RETURN @Zarejestrowani;
+  END
+GO
+
+CREATE FUNCTION ZarejestrowaniUczestnicyRezerwacjiWarsztatu(@ID_Rezerwacji int)
+  RETURNS int
+AS
+  BEGIN
+    BEGIN
+      DECLARE @Zarejestrowani AS int;
+      SET @Zarejestrowani = (SELECT COUNT(*) FROM UczestnicyWarsztatow WHERE ID_RezerwacjiWarsztatu = @ID_Rezerwacji);
+
+      RETURN @Zarejestrowani;
+    END
+  END
+GO
+
 
 CREATE FUNCTION CenaRezerwacjiDniaKonferencji(@ID_Rezerwacji int)
   RETURNS money
@@ -463,20 +497,32 @@ CREATE PROCEDURE DodajUczestnikaDniaKonferencji(@ID_Uczestnika int, @ID_Rezerwac
 AS
   BEGIN
     BEGIN TRY
+    BEGIN TRANSACTION
     IF (@ID_Uczestnika IS NULL)
       RAISERROR ('Podane ID uczestnika jest nullem', 10, 1)
 
     IF (@ID_Rezerwacji IS NULL)
       RAISERROR ('Podane ID rezerwacji jest nullem', 10, 1)
 
-    --Sprawdzenie ilosci miejsc
+    IF NOT EXISTS(SELECT * FROM RezerwacjeDni WHERE ID_Rezerwacji = @ID_Rezerwacji)
+      RAISERROR ('Podane ID rezerwacji nie isntieje', 10, 1)
+
+
+    DECLARE @LiczbaMiejsc AS int;
+    SET @LiczbaMiejsc = (SELECT LiczbaMiejsc FROM RezerwacjeDni WHERE ID_Rezerwacji = @ID_Rezerwacji)
+    IF (NOT dbo.ZarejestrowaniUczestnicyRezerwacjiDniaKonferencji(@ID_Rezerwacji) < @LiczbaMiejsc)
+      RAISERROR ('Rezerwacja jest pe?na, nie mo?na doda? kolejnego uczestnika', 10, 1);
+
+    INSERT INTO UczestnicyKonferencji VALUES (@ID_Uczestnika, @ID_Rezerwacji);
+    COMMIT TRANSACTION
     END TRY
 
     BEGIN CATCH
-
+    ROLLBACK TRANSACTION
     END CATCH
   END
 GO
+
 
 CREATE PROCEDURE DodajUczestnikaWarsztatu
   (@ID_Rezerwacji            int,
@@ -493,13 +539,16 @@ AS
     IF (dbo.WarsztatNalezyDoKonferencjiUczestnika(@ID_UczestnikaKonferencji, @ID_Rezerwacji) = 0)
       RAISERROR ('Uczestnik nie bierze udzia?u w konferencji na której odbywa si? warsztat', 10, 1)
 
-    --sprawdzenie ilosci miejsc
+    DECLARE @LiczbaMiejsc AS int;
+    SET @LiczbaMiejsc = (SELECT LiczbaMiejsc FROM RezerwacjeWarsztatow WHERE ID_Rezerwacji = @ID_Rezerwacji)
+    IF (NOT dbo.ZarejestrowaniUczestnicyRezerwacjiWarsztatu(@ID_Rezerwacji) < @LiczbaMiejsc)
+      RAISERROR ('Rezerwacja jest pe?na, nie mo?na doda? kolejnego uczestnika', 10, 1);
 
     DECLARE @ID_RezerwacjiKonferencji AS int;
     SET @ID_RezerwacjiKonferencji = (SELECT RD.ID_Rezerwacji
                                      FROM RezerwacjeDni RD
                                             JOIN RezerwacjeWarsztatow RW on RD.ID_Rezerwacji = RW.RezerwacjaDnia)
-    INSERT INTO UczestnicyWarsztatow VALUES (@ID_UczestnikaKonferencji, @ID_RezerwacjiKonferencji, @ID_Rezerwacji)
+    INSERT INTO UczestnicyWarsztatow VALUES (@ID_UczestnikaKonferencji, @ID_Rezerwacji, @ID_RezerwacjiKonferencji)
 
     COMMIT TRANSACTION
     END TRY
@@ -768,6 +817,10 @@ if OBJECT_ID('ZmianaDanychKlienta', N'P') is not null
   drop procedure ZmianaDanychKlienta
 GO
 
+if OBJECT_ID('ZmianaCennika', N'P') is not null
+  drop procedure ZmianaCennika
+GO
+
 
 CREATE PROCEDURE UsuniecieUczestnikowRezerwacjiWarsztatu(
   @ID_Rezerwacji int)
@@ -846,19 +899,55 @@ AS
 GO
 
 
-CREATE PROCEDURE AnulowanieRezerwacjiKlienta(@ID_Klienta int)
+CREATE PROCEDURE ZmianaCennika(@ID_Cennika int, @Cena money, @ZnizkaStudencka float, @ProgI float, @ProgII float)
 AS
   BEGIN
+
+    SET NOCOUNT ON;
     BEGIN TRY
     BEGIN TRANSACTION
+    IF (@ID_Cennika IS NULL)
+      RAISERROR ('Podane ID jest nullem', 10, 1)
 
+    IF EXISTS(SELECT * FROM Konferencje WHERE ID_Cennika = @ID_Cennika)
+      RAISERROR ('Nie mo?na zmieni? cennika, je?li jest u?ywany przez chocia? jedn? konferencj?', 10, 1);
 
+    IF (@Cena IS NOT NULL)
+      IF (@Cena < 0)
+        RAISERROR ('Podano ujemn? cen?', 10, 1)
+      ELSE
+        UPDATE CennikKonferencji SET Cena = @Cena WHERE ID_Cennika = @ID_Cennika
+
+    IF (@ZnizkaStudencka NOT BETWEEN 0 AND 1)
+      RAISERROR ('Podano nieprawid?ow? warto?? zni?ki', 10, 1)
+    ELSE
+      UPDATE CennikKonferencji SET ZnizkaStudencka = @ZnizkaStudencka WHERE ID_Cennika = @ID_Cennika
+
+    IF (@ProgI IS NOT NULL)
+      IF (@ProgI > (SELECT ProgII FROM CennikKonferencji WHERE ID_Cennika = @ID_Cennika))
+        RAISERROR ('Prog I musi by? ni?szy b?d? równy progowi II', 10, 1)
+      ELSE
+        IF (@ProgI NOT BETWEEN 0 AND 1)
+          RAISERROR ('Podano nieprawid?ow? warto?? progu cenowego', 10, 1)
+        ELSE
+          UPDATE CennikKonferencji SET ProgI = @ProgI WHERE ID_Cennika = @ID_Cennika
+
+    IF (@ProgII IS NOT NULL)
+      IF (@ProgII < (SELECT ProgI FROM CennikKonferencji WHERE ID_Cennika = @ID_Cennika))
+        RAISERROR ('Prog II musi by? wyzszy b?d? równy progowi I', 10, 1)
+      ELSE
+        IF (@ProgII NOT BETWEEN 0 AND 1)
+          RAISERROR ('Podano nieprawdi?ow? warto?? porgu cenowego', 10, 1)
+        ELSE
+          UPDATE CennikKonferencji SET ProgII = @ProgII WHERE ID_Cennika = @ID_Cennika
     COMMIT TRANSACTION
     END TRY
+
     BEGIN CATCH
     ROLLBACK TRANSACTION
     END CATCH
   END
+
 GO
 
 CREATE PROCEDURE ZmianaDanychKlienta(
@@ -973,6 +1062,17 @@ if OBJECT_ID('NadchodzaceKonferencje', N'V') is not null
   drop VIEW NadchodzaceKonferencje
 GO
 
+IF OBJECT_ID('NadchodzaceKonferencje', N'V') is not null
+  drop VIEW NadchodzaceKonferencje
+GO
+
+CREATE VIEW RezerwacjeBezKompletnejRejestracjiUczestnikow
+  AS
+    SELECT *
+    FROM UczestnicyKonferencji;
+GO
+
+
 CREATE VIEW NadchodzaceKonferencje
   AS
     SELECT ID_Konferencji,
@@ -1076,7 +1176,7 @@ CREATE VIEW NaleznosciKlientowPoTerminie
     Group by k.ID_Klienta, rd.ID_Rezerwacji
 GO
 
--- Procedury zwracaj¹ce dane
+-- Procedury zwracaj?ce dane
 if OBJECT_ID('WarsztatyDlaKonferencji', N'P') is not null
   drop PROCEDURE WarsztatyDlaKonferencji
 GO
