@@ -202,6 +202,15 @@ IF OBJECT_ID('WarsztatNalezyDoKonferencjiUczestnika', N'FN') IS NOT NULL
   DROP FUNCTION WarsztatNalezyDoKonferencjiUczestnika
 GO
 
+
+IF OBJECT_ID('IleDoZaplatyDlaDanejRezerwacji', N'FN') IS NOT NULL
+  DROP FUNCTION IleDoZaplatyDlaDanejRezerwacji
+GO
+
+IF OBJECT_ID('IleZaplaconoZaDanaRezerwacje', N'FN') IS NOT NULL
+  DROP FUNCTION IleZaplaconoZaDanaRezerwacje
+GO
+
 CREATE FUNCTION WolneMiejscaWarsztat(@ID_Warsztatu int)
   RETURNS INT
 AS
@@ -388,19 +397,41 @@ AS
 
 GO
 
-IF OBJECT_ID('IleDoZaplatyDlaDanejRezerwacji', N'FN') IS NOT NULL
-  DROP FUNCTION IleDoZaplatyDlaDanejRezerwacji
-GO
 
-CREATE FUNCTION IleDoZaplatyDlaDanejRezerwacjii (@ID_Rezerwacji int)
+CREATE FUNCTION IleDoZaplatyDlaDanejRezerwacji (@ID_Rezerwacji int)
 	RETURNS money
 AS
 	BEGIN
 		DECLARE @CenaZaDzienRezerwacji MONEY 
 		SET @CenaZaDzienRezerwacji = dbo.CenaRezerwacjiDniaKonferencji(@ID_Rezerwacji)
+		DECLARE @CenaZaWarsztatyWDanejRezerwacji MONEY
+		SET @CenaZaWarsztatyWDanejRezerwacji = 
+			(SELECT SUM(dbo.CenaRezerwacjiWarsztatu(ID_Rezerwacji)) FROM RezerwacjeWarsztatow
+			WHERE RezerwacjaDnia = @ID_Rezerwacji
+			GROUP BY RezerwacjaDnia)
+		RETURN @CenaZaDzienRezerwacji + @CenaZaWarsztatyWDanejRezerwacji
 	END
 GO
 
+CREATE FUNCTION IleZaplaconoZaDanaRezerwacje (@ID_Rezerwacji INT)
+	RETURNS MONEY
+AS
+	BEGIN
+		DECLARE @ZaplataZaKonferencje MONEY
+		SET @ZaplataZaKonferencje = 
+			(SELECT SUM(Kwota) FROM Platnosci 
+			WHERE RezerwacjaDnia = @ID_Rezerwacji 
+			GROUP BY RezerwacjaDnia)
+		DECLARE @ZaplataZaWarsztatyWKonferencji MONEY
+		SET @ZaplataZaWarsztatyWKonferencji =
+			(SELECT SUM(Kwota) FROM Platnosci
+			WHERE RezerwacjaWarsztatu IN 
+				(SELECT ID_Rezerwacji FROM RezerwacjeWarsztatow
+				WHERE RezerwacjaDnia = @ID_Rezerwacji)
+			GROUP BY RezerwacjaDnia)
+		RETURN @ZaplataZaKonferencje + @ZaplataZaWarsztatyWKonferencji
+	END
+GO
 ------------------------------------ Dodatkowe constrainty
 
 ALTER TABLE UczestnicyWarsztatow
@@ -435,7 +466,26 @@ IF OBJECT_ID('DodajPlatnosc', 'P') IS NOT NULL
 
 IF OBJECT_ID('DodajLokalizacje', 'P') IS NOT NULL
   DROP PROCEDURE DodajLokalizacje
+GO
 
+if OBJECT_ID('DodajKlienta', N'P') is not null
+  drop procedure DodajKlienta
+GO
+
+IF OBJECT_ID('DodajKonferencje', 'P') IS NOT NULL
+  DROP PROCEDURE DodajKonferencje
+GO
+
+IF OBJECT_ID('DodajDzienKonferencji', 'P') IS NOT NULL
+  DROP PROCEDURE DodajDzienKonferencji
+GO
+
+if OBJECT_ID('DodajWarsztat', N'P') is not null
+  drop procedure DodajWarsztat
+GO
+
+if OBJECT_ID('DodajRezerwacjeDnia', N'P') is not null
+  drop procedure DodajRezerwacjeDnia
 GO
 
 CREATE PROCEDURE DodajUczestnika
@@ -603,10 +653,6 @@ AS
   END
 GO
 
-if OBJECT_ID('DodajKlienta', N'P') is not null
-  drop procedure DodajKlienta
-GO
-
 CREATE PROCEDURE DodajKlienta(
   @Nazwa       varchar(30) = null,
   @NIP         char(9) = null,
@@ -644,10 +690,6 @@ AS
   END
 GO
 
-IF OBJECT_ID('DodajKonferencje', 'P') IS NOT NULL
-  DROP PROCEDURE DodajKonferencje
-GO
-
 CREATE PROCEDURE DodajKonferencje(
   @Nazwa            varchar(24),
   @DzienRozpoczecia date,
@@ -670,10 +712,6 @@ AS
 		ROLLBACK TRANSACTION
     END CATCH
   END
-GO
-
-IF OBJECT_ID('DodajDzienKonferencji', 'P') IS NOT NULL
-  DROP PROCEDURE DodajDzienKonferencji
 GO
 
 CREATE PROCEDURE DodajDzienKonferencji(
@@ -706,10 +744,6 @@ AS
   END
 GO
 
-if OBJECT_ID('DodajWarsztat', N'P') is not null
-  drop procedure DodajWarsztat
-GO
-
 CREATE PROCEDURE DodajWarsztat(
   @ID_Dnia         int,
   @Rozpoczecie     time,
@@ -739,10 +773,6 @@ AS
 		ROLLBACK TRANSACTION
     END CATCH
   END
-GO
-
-if OBJECT_ID('DodajRezerwacjeDnia', N'P') is not null
-  drop procedure DodajRezerwacjeDnia
 GO
 
 CREATE PROCEDURE DodajRezerwacjeDnia(
@@ -1089,20 +1119,16 @@ CREATE VIEW NaleznosciKlientow
   AS
     SELECT k.ID_Klienta,
 		   kon.ID_Konferencji,
-		   w.Temat,
 		   kon.Nazwa,
-           dbo.CenaRezerwacjiDniaKonferencji(rd.ID_Rezerwacji) + dbo.CenaRezerwacjiWarsztatu(rw.ID_Rezerwacji) as [Zalegla oplata]
+           dbo.IleDoZaplatyDlaDanejRezerwacji(rd.ID_Rezerwacji) - dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji) as [Zalegla oplata]
     FROM RezerwacjeDni rd
 		   join DniKonferencji dk
 		   on dk.ID_Dnia = rd.ID_Dnia
 		   join Konferencje kon 
 		   on kon.ID_Konferencji = dk.ID_Konferencji
-           join RezerwacjeWarsztatow rw on rw.ID_Rezerwacji = rd.ID_Dnia
-           join Warsztaty w on w.ID_Warsztatu = rw.ID_Warsztatu
            right join Klienci k on rd.ID_Klienta = k.ID_Klienta
-           left join Platnosci p on p.RezerwacjaDnia = rd.ID_Rezerwacji or p.RezerwacjaWarsztatu = rw.ID_Rezerwacji
-    where p.ID_Platnosci is null
-    Group by k.ID_Klienta, kon.ID_Konferencji, w.Temat, kon.Nazwa, rd.ID_Rezerwacji, rw.ID_Rezerwacji
+    where dbo.IleDoZaplatyDlaDanejRezerwacji(rd.ID_Rezerwacji) - dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji) > 0
+    Group by k.ID_Klienta, kon.ID_Konferencji, kon.Nazwa, rd.ID_Rezerwacji
 GO
 
 CREATE VIEW NaleznosciKlientowPoTerminie
@@ -1110,18 +1136,16 @@ CREATE VIEW NaleznosciKlientowPoTerminie
     SELECT k.ID_Klienta,
 		   kon.ID_Konferencji,
 		   kon.Nazwa,
-           dbo.CenaRezerwacjiDniaKonferencji(rd.ID_Rezerwacji) + dbo.CenaRezerwacjiWarsztatu(rw.ID_Rezerwacji) as [Zalegla oplata]
+           dbo.IleDoZaplatyDlaDanejRezerwacji(rd.ID_Rezerwacji) - dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji) as [Zalegla oplata]
     FROM RezerwacjeDni rd
 		   join DniKonferencji dk
 		   on dk.ID_Dnia = rd.ID_Dnia
 		   join Konferencje kon 
 		   on kon.ID_Konferencji = dk.ID_Konferencji
-           join RezerwacjeWarsztatow rw on rw.ID_Rezerwacji = rd.ID_Dnia
-           join Warsztaty w on w.ID_Warsztatu = rw.ID_Warsztatu
            right join Klienci k on rd.ID_Klienta = k.ID_Klienta
-           left join Platnosci p on p.RezerwacjaDnia = rd.ID_Rezerwacji or p.RezerwacjaWarsztatu = rw.ID_Rezerwacji
-    where p.ID_Platnosci is null and DATEDIFF(dd, rd.DataRezerwacji, GetDate()) >= 7
-	Group by k.ID_Klienta, kon.ID_Konferencji, kon.Nazwa, rd.ID_Rezerwacji, rw.ID_Rezerwacji
+    WHERE dbo.IleDoZaplatyDlaDanejRezerwacji(rd.ID_Rezerwacji) - dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji) > 0 
+	AND DATEDIFF(dd, rd.DataRezerwacji, GetDate()) >= 7
+	Group by k.ID_Klienta, kon.ID_Konferencji, kon.Nazwa, rd.ID_Rezerwacji
 GO
 
 -- Procedury zwracajace dane
