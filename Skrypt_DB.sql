@@ -73,7 +73,7 @@ CREATE TABLE Lokalizacje (
 
 CREATE TABLE Konferencje (
   ID_Konferencji   int         not null primary key identity (1, 1),
-  Nazwa            varchar(MAX) not null,
+  Nazwa            varchar(60) not null,
   DzienRozpoczecia date        not null,
   DzienZakonczenia date        not null,
   ID_Cennika       int         not null foreign key references CennikKonferencji (ID_Cennika),
