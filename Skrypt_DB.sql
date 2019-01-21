@@ -73,7 +73,7 @@ CREATE TABLE Lokalizacje (
 
 CREATE TABLE Konferencje (
   ID_Konferencji   int         not null primary key identity (1, 1),
-  Nazwa            varchar(60) not null,
+  Nazwa            varchar(128) not null,
   DzienRozpoczecia date        not null,
   DzienZakonczenia date        not null,
   ID_Cennika       int         not null foreign key references CennikKonferencji (ID_Cennika),
@@ -627,6 +627,8 @@ AS
 
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 
@@ -658,6 +660,8 @@ AS
 
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -693,6 +697,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -722,6 +728,8 @@ AS
 
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 
@@ -752,6 +760,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 Go
@@ -774,6 +784,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -815,6 +827,8 @@ AS
     END TRY
     BEGIN CATCH
 		ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -841,6 +855,8 @@ AS
     END TRY
     BEGIN CATCH
 		ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -871,6 +887,8 @@ AS
     END TRY
     BEGIN CATCH
 		ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -905,6 +923,8 @@ AS
     END TRY
     BEGIN CATCH
 		ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -935,6 +955,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -987,6 +1009,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -1007,6 +1031,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -1025,6 +1051,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -1043,6 +1071,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -1069,6 +1099,8 @@ AS
     END TRY
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -1120,6 +1152,8 @@ AS
 
     BEGIN CATCH
     ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 
@@ -1176,6 +1210,8 @@ AS
     END TRY
     BEGIN CATCH
 		ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -1211,6 +1247,8 @@ AS
     END TRY
     BEGIN CATCH
 		ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
@@ -1236,6 +1274,8 @@ AS
     END TRY
     BEGIN CATCH
 		ROLLBACK TRANSACTION
+      DECLARE @msg nvarchar(2048) = error_message()
+      RAISERROR (@msg,10,1)
     END CATCH
   END
 GO
