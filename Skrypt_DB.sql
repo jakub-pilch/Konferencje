@@ -940,6 +940,10 @@ AS
 GO
 
 --Modyfikacje
+if OBJECT_ID('UsuniecieWarsztatu', N'P') is not null
+  drop procedure UsuniecieWarsztatu
+GO
+
 if OBJECT_ID('UsuniecieUczestnikowRezerwacjiWarsztatu', N'P') is not null
   drop procedure UsuniecieUczestnikowRezerwacjiWarsztatu
 GO
@@ -1209,11 +1213,6 @@ AS
 		ROLLBACK TRANSACTION
     END CATCH
   END
-GO
-
-
-if OBJECT_ID('UsuniecieWarsztatu', N'P') is not null
-  drop procedure UsuniecieWarsztatu
 GO
 
 CREATE PROCEDURE UsuniecieWarsztatu(
