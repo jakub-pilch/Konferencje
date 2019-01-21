@@ -55,7 +55,8 @@ CREATE TABLE CennikKonferencji (
   ProgI           float not null,
   ProgII          float not null,
   CONSTRAINT Cennik_CKPoprawnaCena CHECK (Cena >= 0),
-  CONSTRAINT PoprawneZnizki CHECK (ProgI < ProgII)
+  CONSTRAINT PoprawneZnizki CHECK (ProgI < ProgII AND (ProgI BETWEEN 0 AND 1) AND (ProgII BETWEEN 0 AND 1)),
+  CONSTRAINT Cennik_CKUnikalny UNIQUE NONCLUSTERED (Cena, ZnizkaStudencka, ProgI, ProgII)
 )
 
 CREATE TABLE Lokalizacje (
@@ -76,7 +77,8 @@ CREATE TABLE Konferencje (
   ID_Cennika       int         not null foreign key references CennikKonferencji (ID_Cennika),
   Lokalizacja      int         not null foreign key references Lokalizacje (ID_Lokalizacji),
   Constraint PoprawneDaty CHECK (DzienZakonczenia >= DzienRozpoczecia AND
-                                 DATEDIFF(year, getdate(), DzienRozpoczecia) < 1)
+                                 DATEDIFF(year, getdate(), DzienRozpoczecia) < 1),
+  CONSTRAINT Konferencje_CKUnikalne UNIQUE NONCLUSTERED (Nazwa, DzienRozpoczecia, Lokalizacja)
 )
 
 CREATE TABLE DniKonferencji (
@@ -97,6 +99,7 @@ CREATE TABLE Warsztaty (
   ZnizkaStudencka decimal(4, 2) null,
   Temat           varchar(MAX)  not null,
   Constraint PoprawneNastepstwoCzasu CHECK (Rozpoczecie < Zakonczenie),
+  CONSTRAINT Warsztaty_CKCzasTrawnia CHECK (DATEDIFF(minute, Zakonczenie, Rozpoczecie) > 15),
   Constraint Warsztaty_PoprawnaLiczbaMiejsc CHECK (LiczbaMiejsc > 0)
 )
 CREATE TABLE Klienci (
@@ -195,6 +198,9 @@ IF OBJECT_ID('CenaRezerwacjiWarsztatu', N'FN') IS NOT NULL
   DROP FUNCTION CenaRezerwacjiWarsztatu
 GO
 
+IF OBJECT_ID('LiczbaRezerwacjiMiejscKlienta', N'FN') IS NOT NULL
+  DROP FUNCTION LiczbaRezerwacjiMiejscKlienta
+GO
 
 IF OBJECT_ID('WarsztatNalezyDoKonferencjiUczestnika', N'FN') IS NOT NULL
   DROP FUNCTION WarsztatNalezyDoKonferencjiUczestnika
@@ -206,6 +212,14 @@ GO
 
 IF OBJECT_ID('ZarejestrowaniUczestnicyRezerwacjiWarsztatu', N'FN') IS NOT NULL
   DROP FUNCTION ZarejestrowaniUczestnicyRezerwacjiWarsztatu
+GO
+
+IF OBJECT_ID('PoprawnaDataDniaKonferencji', N'FN') IS NOT NULL
+  DROP FUNCTION PoprawnaDataDniaKonferencji
+GO
+
+IF OBJECT_ID('PoprawnaLiczbaDniPrzypisanychDoKonferencji', N'FN') IS NOT NULL
+  DROP FUNCTION PoprawnaLiczbaDniPrzypisanychDoKonferencji
 GO
 
 CREATE FUNCTION WolneMiejscaWarsztat(@ID_Warsztatu int)
@@ -261,15 +275,27 @@ CREATE FUNCTION ZarejestrowaniUczestnicyRezerwacjiWarsztatu(@ID_Rezerwacji int)
   RETURNS int
 AS
   BEGIN
-    BEGIN
-      DECLARE @Zarejestrowani AS int;
-      SET @Zarejestrowani = (SELECT COUNT(*) FROM UczestnicyWarsztatow WHERE ID_RezerwacjiWarsztatu = @ID_Rezerwacji);
 
-      RETURN @Zarejestrowani;
-    END
+    DECLARE @Zarejestrowani AS int;
+    SET @Zarejestrowani = (SELECT COUNT(*) FROM UczestnicyWarsztatow WHERE ID_RezerwacjiWarsztatu = @ID_Rezerwacji);
+
+    RETURN @Zarejestrowani;
+
   END
 GO
 
+CREATE FUNCTION LiczbaRezerwacjiMiejscKlienta(@ID_Klienta int)
+  RETURNS int
+AS
+  BEGIN
+    DECLARE @RezerwacjeMiejsc AS int;
+
+    SET @RezerwacjeMiejsc = (SELECT SUM(LiczbaMiejsc) FROM RezerwacjeDni WHERE ID_Klienta = @ID_Klienta)
+
+    RETURN @RezerwacjeMiejsc
+
+  END
+GO
 
 CREATE FUNCTION CenaRezerwacjiDniaKonferencji(@ID_Rezerwacji int)
   RETURNS money
@@ -419,6 +445,51 @@ AS
 
 GO
 
+
+CREATE FUNCTION PoprawnaLiczbaDniPrzypisanychDoKonferencji(@ID_Konferencji int)
+  RETURNS bit
+AS
+  BEGIN
+    DECLARE @LiczbaDni AS int;
+    SET @LiczbaDni = (SELECT COUNT(*) FROM DniKonferencji WHERE ID_Konferencji = @ID_Konferencji)
+
+    DECLARE @DataRozpoczecia AS date;
+    SET @DataRozpoczecia = (SELECT DzienRozpoczecia FROM Konferencje WHERE ID_Konferencji = @ID_Konferencji)
+
+    DECLARE @DataZakonczenia AS date;
+    SET @DataZakonczenia = (SELECT DzienZakonczenia FROM Konferencje WHERE ID_Konferencji = @ID_Konferencji)
+
+    IF (@LiczbaDni <= DATEDIFF(day, @DataRozpoczecia, @DataZakonczenia) + 1)
+      RETURN 1
+
+
+    RETURN 0
+  END
+GO
+
+CREATE FUNCTION PoprawnaDataDniaKonferencji(@ID_Dnia int, @DataDnia date)
+  RETURNS bit
+AS
+  BEGIN
+    DECLARE @DataRozpoczecia AS date;
+    SET @DataRozpoczecia = (SELECT DzienRozpoczecia
+                            FROM Konferencje
+                                   JOIN DniKonferencji DK ON Konferencje.ID_Konferencji = DK.ID_Konferencji
+                            WHERE ID_Dnia = @ID_Dnia)
+
+    DECLARE @DataZakonczenia AS date;
+    SET @DataZakonczenia = (SELECT DzienZakonczenia
+                            FROM Konferencje
+                                   JOIN DniKonferencji DK ON Konferencje.ID_Konferencji = DK.ID_Konferencji
+                            WHERE ID_Dnia = @ID_Dnia)
+
+    IF (@DataDnia BETWEEN @DataRozpoczecia AND @DataZakonczenia AND (SELECT COUNT(*) FROM DniKonferencji WHERE ID_Dnia=@ID_Dnia)=1)
+      RETURN 1
+
+    RETURN 0
+  END
+GO
+
 ------------------------------------ Dodatkowe constrainty
 
 ALTER TABLE UczestnicyWarsztatow
@@ -431,8 +502,14 @@ ALTER TABLE UczestnicyWarsztatow
   ADD CONSTRAINT Rezerwacje_CKKonferencjaWarsztatu CHECK (dbo.WarsztatNalezyDoKonferencjiUczestnika(ID_Uczestnika,
                                                                                                     ID_RezerwacjiWarsztatu)
                                                           = 1)
-
 GO
+
+ALTER TABLE DniKonferencji
+  ADD CONSTRAINT Dni_CKPoprawnaDataDnia CHECK (dbo.PoprawnaDataDniaKonferencji(ID_Dnia, Data) = 1) GO
+
+ALTER TABLE DniKonferencji
+  ADD CONSTRAINT Dni_CKPoprawnaLiczbaDni CHECK (dbo.PoprawnaLiczbaDniPrzypisanychDoKonferencji(ID_Konferencji) = 1) GO
+
 
 -------------------------- Procedury
 
@@ -605,6 +682,9 @@ AS
                 AND KodPocztowy = @KodPocztowy
                 AND NumerBudynku = @NumerBudynku)
       RAISERROR ('Podana lokalizacja ju? istnieje w bazie', 10, 1)
+    IF (@KodPocztowy NOT LIKE '[0-9][0-9]-[0-9][0-9][0-9]')
+      RAISERROR ('B??dny format kodu pocztowego', 10, 1)
+
     INSERT INTO Lokalizacje VALUES (@Miasto, @Ulica, @KodPocztowy, @NumerBudynku)
     COMMIT TRANSACTION
     END TRY
@@ -717,8 +797,7 @@ AS
     SET NOCOUNT ON;
     BEGIN TRY
     BEGIN TRANSACTION
-    INSERT INTO DniKonferencji (ID_Konferencji, Data, LiczbaMiejsc)
-    VALUES (@ID_Konferencji, @Data, @LiczbaMiejsc)
+    INSERT INTO DniKonferencji VALUES (@ID_Konferencji, @Data, @LiczbaMiejsc)
     COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
@@ -817,8 +896,8 @@ if OBJECT_ID('ZmianaDanychKlienta', N'P') is not null
   drop procedure ZmianaDanychKlienta
 GO
 
-if OBJECT_ID('ZmianaCennika', N'P') is not null
-  drop procedure ZmianaCennika
+if OBJECT_ID('ZmianaWartosciCennika', N'P') is not null
+  drop procedure ZmianaWartosciCennika
 GO
 
 
@@ -899,7 +978,33 @@ AS
 GO
 
 
-CREATE PROCEDURE ZmianaCennika(@ID_Cennika int, @Cena money, @ZnizkaStudencka float, @ProgI float, @ProgII float)
+CREATE PROCEDURE ZmianaCennikaKonferencji(@ID_Konferencji int, @ID_Cennika int)
+AS
+  BEGIN
+    BEGIN TRY
+    BEGIN TRANSACTION
+    IF (@ID_Konferencji IS NULL)
+      RAISERROR ('Podane ID konferencji jest nullem', 10, 1)
+    IF (@ID_Cennika IS NULL)
+      RAISERROR ('Podane ID cennika jest nullem', 10, 1)
+
+    IF EXISTS(SELECT *
+              FROM DniKonferencji AS DK
+                     JOIN RezerwacjeDni RD on DK.ID_Dnia = RD.ID_Dnia
+              WHERE ID_Konferencji = @ID_Konferencji)
+      RAISERROR ('Dla konferencji istniej? rezerwacje, nie mo?na zmieni? cennika', 10, 1)
+
+    UPDATE Konferencje SET ID_Cennika = @ID_Cennika WHERE ID_Konferencji = @ID_Konferencji
+    COMMIT TRANSACTION
+    END TRY
+    BEGIN CATCH
+    ROLLBACK TRANSACTION
+    END CATCH
+  END
+GO
+
+CREATE PROCEDURE ZmianaWartosciCennika(@ID_Cennika int, @Cena money, @ZnizkaStudencka float, @ProgI float,
+                                       @ProgII     float)
 AS
   BEGIN
 
@@ -1059,19 +1164,90 @@ GO
 -- Widoki
 
 if OBJECT_ID('NadchodzaceKonferencje', N'V') is not null
-  drop VIEW NadchodzaceKonferencje
+  DROP VIEW NadchodzaceKonferencje
 GO
 
-IF OBJECT_ID('NadchodzaceKonferencje', N'V') is not null
-  drop VIEW NadchodzaceKonferencje
+IF OBJECT_ID('RezerwacjeBezKompletnejRejestracjiUczestnikow', N'V') is not null
+  DROP VIEW RezerwacjeBezKompletnejRejestracjiUczestnikow
+GO
+
+IF OBJECT_ID('UczestnicyWszystkichKonferencji', N'V') is not null
+  DROP VIEW UczestnicyWszystkichKonferencji
+GO
+
+IF OBJECT_ID('UczestnicyWszystkichWarsztatow', N'V') is not null
+  DROP VIEW UczestnicyWszystkichWarsztatow
 GO
 
 CREATE VIEW RezerwacjeBezKompletnejRejestracjiUczestnikow
   AS
-    SELECT *
-    FROM UczestnicyKonferencji;
+    SELECT ID_Rezerwacji,
+           ID_Klienta,
+           'Dzien konferencji'                                                                   AS 'Typ rejestracji',
+           LiczbaMiejsc - [dbo].ZarejestrowaniUczestnicyRezerwacjiDniaKonferencji(ID_Rezerwacji) AS 'Brakujace miejsca'
+    FROM RezerwacjeDni
+    WHERE [dbo].ZarejestrowaniUczestnicyRezerwacjiDniaKonferencji(ID_Rezerwacji) < LiczbaMiejsc
+
+    UNION
+
+    SELECT ID_Rezerwacji,
+           (SELECT ID_Klienta FROM RezerwacjeDni AS RD WHERE RD.ID_Rezerwacji = RW.RezerwacjaDnia),
+           'Warsztat'                                                                         AS 'Typ rejestracji',
+           LiczbaMiejsc - [dbo].ZarejestrowaniUczestnicyRezerwacjiWarsztatu(RW.ID_Rezerwacji) AS 'Brakujace miejsca'
+    FROM RezerwacjeWarsztatow AS RW
+    WHERE [dbo].ZarejestrowaniUczestnicyRezerwacjiWarsztatu(RW.ID_Rezerwacji) < LiczbaMiejsc;
 GO
 
+CREATE VIEW UczestnicyWszystkichKonferencji
+  AS
+    SELECT Imie, Nazwisko, U.ID_Uczestnika, ID_Klienta, ID_RezerwacjiKonferencji, DK.ID_Dnia, ID_Konferencji
+    FROM Uczestnicy AS U
+           JOIN UczestnicyKonferencji AS UK ON UK.ID_Uczestnika = U.ID_Uczestnika
+           JOIN RezerwacjeDni AS RD ON RD.ID_Rezerwacji = UK.ID_RezerwacjiKonferencji
+           JOIN DniKonferencji DK on RD.ID_Dnia = DK.ID_Dnia
+GO
+
+CREATE VIEW UczestnicyWszystkichWarsztatow
+  AS
+    SELECT Imie,
+           Nazwisko,
+           U.ID_Uczestnika,
+           ID_Klienta,
+           ID_RezerwacjiWarsztatu,
+           DK.ID_Dnia,
+           ID_Warsztatu,
+           ID_Konferencji
+    FROM Uczestnicy AS U
+           JOIN UczestnicyKonferencji AS UK ON UK.ID_Uczestnika = U.ID_Uczestnika
+           JOIN UczestnicyWarsztatow AS UW ON UW.ID_Uczestnika = UK.ID_Uczestnika
+           JOIN RezerwacjeWarsztatow AS RW ON RW.ID_Rezerwacji = UW.ID_RezerwacjiWarsztatu
+           JOIN RezerwacjeDni AS RD ON RW.RezerwacjaDnia = RD.ID_Rezerwacji
+           JOIN DniKonferencji DK on RD.ID_Dnia = DK.ID_Dnia
+GO
+
+CREATE VIEW RezerwacjeKlientow
+  AS
+    SELECT Imie, Nazwisko, K.ID_Klienta, ID_Rezerwacji, 'Dzien konferencji' AS 'Typ rezerwacji'
+    FROM Klienci AS K
+           JOIN RezerwacjeDni RD on K.ID_Klienta = RD.ID_Klienta
+
+    UNION
+    SELECT Imie, Nazwisko, K.ID_Klienta, RW.ID_Rezerwacji, 'Warsztat' AS 'Typ rezerwacji'
+    FROM Klienci AS K
+           JOIN RezerwacjeDni RD on K.ID_Klienta = RD.ID_Klienta
+           JOIN RezerwacjeWarsztatow AS RW ON RW.RezerwacjaDnia = RD.ID_Rezerwacji
+
+GO
+
+
+CREATE VIEW NajaktywniejsiKlienci
+  AS
+    SELECT Imie,
+           Nazwisko,
+           K.ID_Klienta,
+           [dbo].LiczbaRezerwacjiMiejscKlienta(K.ID_Klienta) AS 'Liczba zarezerwowanych miejsc'
+    FROM Klienci AS K
+GO
 
 CREATE VIEW NadchodzaceKonferencje
   AS
