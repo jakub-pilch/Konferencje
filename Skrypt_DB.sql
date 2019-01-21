@@ -1161,7 +1161,8 @@ CREATE VIEW NaleznosciKlientowPoTerminie
 		   kon.Nazwa,
            ISNULL(dbo.IleDoZaplatyDlaDanejRezerwacji(rd.ID_Rezerwacji), 0)
 		   - ISNULL(dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji), 0) 
-		   AS [Zalegla oplata]
+		   AS [Zalegla oplata],
+		   DATEDIFF(dd, rd.DataRezerwacji, GetDate()) AS [Ile po terminie]
     FROM RezerwacjeDni rd
 		   join DniKonferencji dk
 		   on dk.ID_Dnia = rd.ID_Dnia
@@ -1171,7 +1172,7 @@ CREATE VIEW NaleznosciKlientowPoTerminie
     WHERE dbo.IleDoZaplatyDlaDanejRezerwacji(rd.ID_Rezerwacji) 
 	- dbo.IleZaplaconoZaDanaRezerwacje(rd.ID_Rezerwacji) > 0 
 	AND DATEDIFF(dd, rd.DataRezerwacji, GetDate()) >= 7
-	Group by k.ID_Klienta, kon.ID_Konferencji, kon.Nazwa, rd.ID_Rezerwacji
+	Group by k.ID_Klienta, kon.ID_Konferencji, kon.Nazwa, rd.ID_Rezerwacji, DATEDIFF(dd, rd.DataRezerwacji, GetDate())
 GO
 
 -- Procedury zwracajace dane
