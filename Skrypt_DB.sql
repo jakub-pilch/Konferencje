@@ -1066,9 +1066,12 @@ AS
     DECLARE CursorWarsztatu CURSOR FOR SELECT ID_Rezerwacji
                                        FROM RezerwacjeWarsztatow AS RW
                                        WHERE RW.RezerwacjaDnia = @ID_Rezerwacji
+    DECLARE @IDRezerwacjiWarsztatu AS int;
     WHILE @@FETCH_STATUS = 0
       BEGIN
-        EXEC dbo.AnulowanieRezerwacjiWarsztatu FETCH NEXT FROM CursorWarsztatu;
+        FETCH NEXT FROM CursorWarsztatu
+        INTO @IDRezerwacjiWarsztatu;
+        EXEC dbo.AnulowanieRezerwacjiWarsztatu @IDRezerwacjiWarsztatu;
       END
     CLOSE CursorWarsztatu;
     DEALLOCATE CursorWarsztatu;
