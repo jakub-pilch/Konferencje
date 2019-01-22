@@ -553,10 +553,12 @@ ALTER TABLE UczestnicyWarsztatow
 GO
 
 ALTER TABLE DniKonferencji
-  ADD CONSTRAINT Dni_CKPoprawnaDataDnia CHECK (dbo.PoprawnaDataDniaKonferencji(ID_Dnia, Data) = 1) GO
+  ADD CONSTRAINT Dni_CKPoprawnaDataDnia CHECK (dbo.PoprawnaDataDniaKonferencji(ID_Dnia, Data) = 1) 
+GO
 
 ALTER TABLE DniKonferencji
-  ADD CONSTRAINT Dni_CKPoprawnaLiczbaDni CHECK (dbo.PoprawnaLiczbaDniPrzypisanychDoKonferencji(ID_Konferencji) = 1) GO
+  ADD CONSTRAINT Dni_CKPoprawnaLiczbaDni CHECK (dbo.PoprawnaLiczbaDniPrzypisanychDoKonferencji(ID_Konferencji) = 1)
+GO
 
 
 -------------------------- Procedury
