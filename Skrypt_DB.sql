@@ -1519,3 +1519,39 @@ AS
     WHERE k.ID_Konferencji = @ID_Konferencji
   END
 GO
+
+-- Procedura korzystająca z widoku
+if OBJECT_ID('AnulowanieZaleglychRezerwacji', N'P') is not null
+  drop PROCEDURE AnulowanieZaleglychRezerwacji
+GO
+
+CREATE PROCEDURE AnulowanieZaleglychRezerwacji
+AS
+  BEGIN
+    BEGIN TRY
+
+    DECLARE CursorRezerwacji CURSOR FOR SELECT RD.ID_Rezerwacji
+                                        FROM NaleznosciKlientowPoTerminie AS N
+                                               JOIN DniKonferencji AS DK ON DK.ID_Konferencji = N.ID_Konferencji
+                                               JOIN RezerwacjeDni AS RD
+                                                 ON RD.ID_Klienta = N.ID_Klienta AND RD.ID_Dnia = DK.ID_Dnia;
+    DECLARE @IDRezerwacjiDnia AS int;
+    WHILE @@FETCH_STATUS = 0
+      BEGIN
+        FETCH NEXT FROM CursorRezerwacji
+        INTO @IDRezerwacjiDnia;
+        EXEC dbo.AnulowanieRezerwacjiDniaKonferencji @IDRezerwacjiDnia;
+      END
+
+    CLOSE CursorWarsztatu;
+    DEALLOCATE CursorWarsztatu;
+
+    BEGIN TRANSACTION
+    COMMIT TRANSACTION
+    END TRY
+    BEGIN CATCH
+    ROLLBACK TRANSACTION
+    DECLARE @msg nvarchar(2048) = error_message()
+    RAISERROR (@msg, 10, 1)
+    END CATCH
+  END
